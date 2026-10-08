@@ -173,3 +173,77 @@ def test_writer_truncates_names_at_13_chars():
     skeleton = corpus.skeleton_bytes()
     out = g.build_from_skeleton(skeleton, name="Test123456789abc")
     assert g.read_name(out) == "Test123456789"
+
+
+# ---- the 0x0E-0x0F checksum: CRC-16, poly 0x8005 reflected, init 0xE011, over bytes 0x10..0x463 ----------------
+
+REAL_PRST = [
+    "app/static/data/gp150_skeleton.prst",
+    "re/gp150_captures/cc_experiments/slot00_baseline.prst",
+    "re/gp150_captures/live_edit/readback_after_save_gain80.prst",
+    "re/gp150_captures/param_edits/200-Its GP150_NS.prst",
+    "re/gp150_captures/param_edits/200-Its GP150_NS_GAIN_60.prst",
+    "re/gp150_captures/param_edits/200-Test123456789.prst",
+    "re/gp150_captures/wake_replay/slot00_no_suite.prst",
+    "re/gp150_captures/wake_select_read/slot005_settle0.3_uk900dist.prst",
+    "re/gp150_captures/wake_select_read/slot010_settle10_morse_purple.prst",
+    "re/gp150_captures/write_attempts/readback_slot197_after_bad_checksum.prst",
+    "re/gp150_captures/write_attempts/readback_slot199_after_import.prst",
+    "re/gp150_captures/write_preset_2026-09-27/004-Foxy Clean.prst",
+]
+
+
+def test_checksum_matches_real_device_files():
+    # all stored by a real pedal / Suite; "readback_slot197_after_bad_checksum" is a body written WITH a wrong
+    # checksum and read back: the pedal recomputed it, and it equals the formula.
+    for rel in REAL_PRST:
+        with open(os.path.join(PROJECT_ROOT, rel), "rb") as f:
+            prst = f.read()
+        assert g.checksum_ok(prst), f"{rel}: stored {g.read_checksum(prst):04x}, computed {g.compute_checksum(prst):04x}"
+
+
+def test_checksum_over_the_real_corpus():
+    if not corpus.have_real_corpus():
+        import pytest
+        pytest.skip("needs the real GP-150 corpus (set GP150_CORPUS_DIR)")
+    for f in GP150_FILES:
+        prst = open(f, "rb").read()
+        assert g.checksum_ok(prst), f
+
+
+def test_checksum_ignores_the_slot_index_and_follows_content():
+    prst = bytearray(corpus.skeleton_bytes())
+    base = g.compute_checksum(prst)
+    prst[g.PATCH_INDEX_OFF] = 77
+    assert g.compute_checksum(prst) == base, "the slot index is not covered"
+    g.write_name(prst, "Other")
+    assert g.compute_checksum(prst) != base
+
+
+def test_written_bodies_carry_a_valid_checksum():
+    skeleton = corpus.skeleton_bytes()
+    out = g.build_from_skeleton(skeleton, name="Check Me")
+    assert g.checksum_ok(out)
+    for _name, prst, _expected in corpus.synthetic_patches(12):
+        assert g.checksum_ok(prst)
+    for _name, prst in corpus.converted_upstream_patches():
+        assert g.checksum_ok(prst)
+    broken = bytearray(out)
+    broken[g.CHECKSUM_OFF] ^= 0xFF
+    assert not g.checksum_ok(bytes(broken))
+    g.fix_checksum(broken)
+    assert bytes(broken) == out
+
+
+def test_module_mask_matches_real_files_and_follows_enable_flags():
+    for rel in REAL_PRST:
+        with open(os.path.join(PROJECT_ROOT, rel), "rb") as f:
+            prst = f.read()
+        assert prst[g.MODULE_MASK_OFF] | (prst[g.MODULE_MASK_OFF + 1] << 8) == g.module_mask(prst), rel
+    b = bytearray(corpus.skeleton_bytes())
+    assert g.module_mask(b) == 0x800  # only VOL on
+    g.write_module_enabled(b, "AMP", True)
+    g.write_module_enabled(b, "RVB", True)
+    assert g.module_mask(b) == 0xC10 and b[g.MODULE_MASK_OFF] == 0x10 and b[g.MODULE_MASK_OFF + 1] == 0x0C
+    g.write_module_enabled(b, "AMP", False)
+    assert g.module_mask(b) == 0xC00

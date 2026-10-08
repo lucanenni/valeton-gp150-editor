@@ -146,6 +146,7 @@ export function editPatch(body, changes) {
     if (cfg.enabled != null) G.writeModuleEnabled(out, module, cfg.enabled);
     else if (cfg.model != null && !hadModel) G.writeModuleEnabled(out, module, true);   // a module that just got its first model is switched on
   }
+  G.fixChecksum(out);
   const after = decodePatch(out);
   const fb = flat(before), fa = flat(after);
   const diff = Object.keys({ ...fb, ...fa }).filter((k) => fb[k] !== fa[k]).map((k) => `${k}: ${fb[k] ?? "–"} → ${fa[k] ?? "–"}`);

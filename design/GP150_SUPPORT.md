@@ -22,7 +22,7 @@ notes, kept unchanged). It covers the GP-150 only.
 |---|---|---|---|
 | `.prst` length | 507 | 552 | **1128** |
 | container magic | `GP-5\0` | `GP-50\0` | `11 30 64 04` |
-| file checksum | CRC-8/0x07 @0x14 | CRC-8/0x07 @0x14 | device-computed, not reproducible offline |
+| file checksum | CRC-8/0x07 @0x14 | CRC-8/0x07 @0x14 | CRC-16 @0x0E (see §2) |
 | name | 0x19 | 0x19 | 0x2C (13 chars) |
 
 GP-150 is **not** a variant of the GP-5/GP-50 container; only the nibble-per-byte
@@ -44,7 +44,7 @@ patch volume, BPM, NAM mode, the three Quick Knob targets (`targetId`/`algId`),
 the nine EXP/CTRL assignments (`{targetId, algId, rangeMin, rangeMax}`, `-1` =
 unused; entries accumulate per group) and the footswitch bitmask. Writes use the
 `[0x01, checksum, dataLen+8, 0, 0, 0x03, magic×2, datasize, data…]` envelope with
-the normal chunking/tag machinery. A preset's own 0x0E–0x0F file checksum is never verified by the pedal for writes
+the normal chunking/tag machinery. A preset's own 0x0E–0x0F file checksum is a CRC-16 (polynomial 0x8005 bit-reflected, init 0xE011, over bytes 0x10–0x463, stored big-endian; it does not cover the slot index). It reproduces all 200 files of a real corpus and 200 bodies read back from the pedal, including ones edited after the export. The pedal never verifies it for writes
 (the device recomputes it); the decoder therefore does not validate it.
 
 ## 3. Wire protocol
@@ -228,5 +228,5 @@ run-to-run spread (about ±1 dB in level and ~2 dB rms ripple, mostly above
 - CC0 + PC re-triggers a fresh read only the first time in a session.
 - A wrong wire tag is silently ignored by the pedal (no ack, no error).
 - Truncating a `.clo` without rewriting its header/CRC makes the pedal howl.
-- Reading a patch never verifies its 0x0E–0x0F checksum; do not treat a
+- Nothing verifies the 0x0E–0x0F checksum on import or write (a body written with a wrong one is stored with the right one); do not treat a
   mismatch as corruption.

@@ -100,9 +100,11 @@ in upstream's file is out of date. Findings behind each item are in
   empty skeleton were written to scratch slots 198/199 of a real GP-150 and read back
   (names) and inspected on the pedal: accepted, plausible chain and parameters.
 
-- [ ] **GP150-2** — *Blocked.* The 0x0E–0x0F file checksum of a `.prst` cannot be
-  reproduced offline (the pedal computes it itself and never verifies it on write).
-  Not needed for any shipped feature.
+- [x] **GP150-2** — The `.prst` 0x0E–0x0F checksum: solved 2026-10-08, CRC-16 (polynomial 0x8005 reflected,
+  init 0xE011) over bytes 0x10–0x463, big-endian; reproduces 200/200 real files and 200/200 bodies read from
+  the pedal. Written bodies (converter, builders, MCP) now carry a valid one, and the enabled-module mask at
+  0x444 that the pedal rewrites is kept in step; two bodies built that way were written to a scratch slot and
+  read back byte-identical (`re/DEVICE_GP150.md`, "Checksum").
 - [x] **PLAT-1** — Hosting: GitHub Pages, live at https://lucanenni.github.io/valeton-gp150-editor/
   (`.github/workflows/pages.yml` builds `dist/` and deploys on every push to `master`; the static
   build was checked under a sub-path, workers included).

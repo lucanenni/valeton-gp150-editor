@@ -42,7 +42,11 @@ def test_untouched_bytes_stay_those_of_the_skeleton(patches):
         assert len(prst) == len(skeleton)
         # header, constants and the tail outside any written field are never touched
         assert prst[:4] == skeleton[:4], fname
-        assert prst[-200:] == skeleton[-200:], fname
+        # (the enabled-module mask at 0x444 follows the enable flags, and the checksum follows the content)
+        mask = slice(g.MODULE_MASK_OFF, g.MODULE_MASK_OFF + 2)
+        tail = len(prst) - 200
+        assert prst[tail:mask.start] == skeleton[tail:mask.start], fname
+        assert prst[mask.stop:] == skeleton[mask.stop:], fname
 
 
 def test_converted_upstream_presets_are_valid(patches):

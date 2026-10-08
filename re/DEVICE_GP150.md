@@ -13,9 +13,9 @@ SnapTone profiler are summarized in `design/GP150_SUPPORT.md`; this file is the
 `.prst` container spec.
 
 **Status:** reading is complete and byte-for-byte verified against the 200-file
-corpus; writes are live-verified (see `design/GP150_SUPPORT.md` §3). The one thing
-not reproducible offline is the file's own 0x0E–0x0F checksum (see "Open" at the
-bottom) — the pedal computes it itself when it stores a patch.
+corpus; writes are live-verified (see `design/GP150_SUPPORT.md` §3). The file's own
+0x0E–0x0F checksum is solved too (see "Checksum" at the bottom) — the pedal recomputes
+it itself when it stores a patch, and nothing verifies it on import.
 
 ## Container
 
@@ -32,8 +32,9 @@ already noted as a constant below.
 prst[0x00:0x04]  magic header, `11 30 64 04`                       CONFIRMED
 prst[0x04]       patch slot index, 0-based (u8)                    CONFIRMED
 prst[0x05:0x0E]  constant across all 200 real samples, unidentified
-prst[0x0E:0x10]  varies per file, content-dependent — NOT a checksum in any
-                 tested form (see "Open" below)                     UNIDENTIFIED
+prst[0x0E:0x10]  checksum, u16 big-endian: CRC-16 (poly 0x8005
+                 reflected, init 0xE011) over 0x10..0x463 — not the
+                 slot index (see "Checksum" below)                  CONFIRMED
 prst[0x10:0x2C]  constant across all 200 real samples, unidentified
 prst[0x2C:0x39]  patch name, ASCII/latin1, null-padded, 13 bytes    PARTIAL
                  (longest real name seen is 13 chars — the padding out to at
@@ -287,33 +288,39 @@ param layout" below: that offset is only correct for the specific model
 each entry was tested against (usually algId 0), not necessarily every
 model's algId-0 param. The real, general answer is `module_param_offset()`.
 
+## Checksum (solved 2026-10-08)
+
+`prst[0x0E:0x10]` = CRC-16, polynomial 0x8005 processed bit-reflected (0xA001), initial value 0xE011, no final
+xor, over bytes `0x10..0x463` (1114 bytes; the last four bytes of the 1128 are zero padding in every body seen),
+stored big-endian. It does not cover the slot index (byte 4): the 100 factory-empty patches differ only there and
+share one checksum. `patch/gp150_format.py` `compute_checksum()` / `fix_checksum()` and the JS twin implement it.
+
+How it was found (after standard CRC variants over many ranges had failed): for a CRC, the checksum difference
+of two equal-length messages depends only on the difference of the messages, so initial value and final xor drop
+out. Taking pairs of real patches that differ in a few bytes, every 16-bit polynomial in every bit order and for
+every end offset was tested at once; exactly one candidate fit all pairs (0x8005 reflected, end at 0x464). The
+initial value then fell out of a direct solve (any start up to the first varying byte gives an equivalent
+value; 0xE011 is for start 0x10). Confirmed on 200/200 files of a real corpus and 200/200 bodies read back from
+the pedal in 2026-10 (including slots edited after the export), and on the twelve real files tracked in
+`re/gp150_captures`. `readback_slot197_after_bad_checksum.prst` is a body imported with a deliberately wrong
+checksum and read back: the pedal stored the correct one.
+
+Hardware check, 2026-10-08: two patches built by the MCP builder (checksum and mask computed by our code) were
+written to a scratch slot with the normal full-preset write and read back by index: **0 bytes differed** from what
+was sent, so the pedal stores such a body exactly as is. An earlier try with the factory-empty mask came back with
+two bytes changed at `0x444-0x445` and a checksum recomputed over them.
+
+### The enabled-module mask at 0x444
+
+`prst[0x444:0x446]` (u16 LE) is a bitmask of the enabled modules, one bit per module (PRE 0x1, WAH 0x2, DST 0x4,
+NS 0x8, AMP 0x10, NR 0x20, CAB 0x40, EQ 0x80, MOD 0x100, DLY 0x200, RVB 0x400, VOL 0x800; independent of the chain
+order). It reproduces all 200 corpus files; the NS bit is inferred from the sequence (NS is never enabled in the
+corpus). The pedal rewrites it itself when it stores a patch, and since it lies inside the checksum range our writers
+(`write_module_enabled()`) keep it in step with the enable flags. The other varying bytes of that tail
+(`0x448`, `0x44c`) belong to the patch-level settings (footswitch assignments), see GP150-10.
+
 ## Open (do not re-derive from scratch, but not solved either)
 
-- **Checksum**: `0x0E-0x0F` is content-dependent (changes on every param
-  edit) but matches no tested algorithm. Ruled out, across the whole
-  200-file corpus, with the candidate byte(s) zeroed before computing: CRC-8
-  (8 polys × init × refin/refout × wide offset range), standard CRC-16
-  variants (CCITT-FALSE/XMODEM/MODBUS/ARC/USB/KERMIT/X25), CRC-32,
-  Fletcher-16, Adler-32, and plain 8/16-bit additive sums — each tried over
-  many start/end boundaries (file-relative and structural, e.g. up to the
-  order array or up to EOF) and, separately, over a hand-built blob of just
-  the "meaningful" fields (name + chain order + all 12 model fxids + all
-  param floats, skipping the constant filler in between). **This is now a
-  thoroughly exhausted search** (ranges, polynomials, init values and bit orders
-  swept over the whole corpus, no match). If pursued further, the more promising
-  angles are: a non-standard/vendor-specific polynomial (unguessable without the
-  firmware, which is not obtainable in usable form), or accepting it isn't a checksum at all (a version/build tag,
-  save-session id, or something else not derivable from file content).
-  **External lead, unverified (2026-08-22)**: a gist a user found
-  (github.com/AlbertoBarba/GP150_PRST_FORMAT.md) claims this field "is not
-  required to author a valid file" — i.e. the device doesn't check it at
-  all. Consistent with "not a checksum" above, and several of that gist's
-  other claims independently checked out against this project's own
-  corpus (see design/GP150_SUPPORT.md §3.2 for exactly what).
-  But this specific claim is about live device write-acceptance, which we
-  haven't tested ourselves — do not treat it as confirmed, and do not
-  attempt a write based on it without this project's own capture-first/
-  byte-diff/controlled-test discipline (`re/DEVICE_WRITE.md`).
 - **`0x441-0x444` region**: a real, distinct varying region (confirmed in
   the corpus at `0x444-0x445`/`0x448-0x449`/`0x44c-0x44d`, a `0x44`-spaced
   pattern), first flagged from an NS-activation side-effect. **Not** the

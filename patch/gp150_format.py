@@ -3,19 +3,21 @@
 Spec: `re/DEVICE_GP150.md` (overview: `design/GP150_SUPPORT.md`).
 The read side is fully mapped: chain order, every module's model + full
 params + on/off state, and the name field. The file's own `0x0E-0x0F`
-checksum is still NOT decoded — but confirmed 2026-09-17, with a real live
-test (corrupt a real file's checksum, import into Valeton Suite, push to
-the real pedal — accepted at both steps, patch came out correct), that it
-does not need to be: Suite recomputes/repairs it before ever transmitting
-to the device (see design/GP150_SUPPORT.md §2). This is
+checksum is decoded too (2026-10-08, see `compute_checksum()`): CRC-16 with
+polynomial 0x8005 (bit-reflected), init 0xE011, over bytes 0x10..0x463,
+stored big-endian; it reproduces all 200 files of a real corpus and 200
+bodies read back from the pedal. It is never verified on import, though:
+confirmed 2026-09-17, with a real live test (corrupt a real file's
+checksum, import into Valeton Suite, push to the real pedal — accepted at
+both steps, patch came out correct). This is
 NOT the live SysEx write protocol (GP150-6, still genuinely blocked by an
 unrelated per-message `tag` byte this project has never cracked) — it
 only unblocks producing a `.prst` FILE for the user to import through
 Suite, never a direct device write. `build_from_skeleton()` below only
 edits a REAL, valid GP-150 patch's known fields (name, chain order,
 module models/params/enable) and leaves everything else — including the
-still-undecoded checksum and the ~168-byte unmapped tail — untouched from
-the skeleton, exactly like `patch/convert.py` reshapes GP-5/GP-50 by
+~168-byte unmapped tail — untouched from the skeleton (the checksum is
+recomputed), exactly like `patch/convert.py` reshapes GP-5/GP-50 by
 editing a real target skeleton rather than building one from scratch.
 
 Model IDs (which catalog entry occupies each module slot) ARE decoded —
@@ -53,6 +55,10 @@ from typing import NamedTuple, Optional
 PRST_LEN = 1128
 
 PATCH_INDEX_OFF = 0x04
+CHECKSUM_OFF = 0x0E        # u16 big-endian
+CHECKSUM_START = 0x10      # the CRC covers [CHECKSUM_START, CHECKSUM_END): not the slot index, not itself
+CHECKSUM_END = 1124        # the last 4 bytes are zero padding in every observed body
+CHECKSUM_INIT = 0xE011
 NAME_OFF = 0x2C
 NAME_MAX = 13  # confirmed 2026-07-31: a 16-char input truncates to exactly
 # 13 on the device (re/DEVICE_GP150.md) — this is the real field limit, not
@@ -282,6 +288,52 @@ def write_module_param_by_alg_id(b: bytearray, module: str, alg_id: int, value: 
 
 def write_module_enabled(b: bytearray, module: str, enabled: bool) -> None:
     b[MODULE_ENABLE_OFFSET[module]] = 1 if enabled else 0
+    set_module_mask(b)
+
+
+# The pedal keeps a bitmask of the enabled modules at 0x444 (u16 LE) and rewrites it itself when it stores a patch
+# (found 2026-10: a body written with the factory-empty mask came back with the right one, and the checksum
+# recomputed over it). One bit per module in this order; reproduces 200/200 real files. The NS bit (0x8) is
+# inferred from the sequence: NS was never enabled in the corpus.
+MODULE_MASK_OFF = 0x444
+MODULE_MASK_BIT = {"PRE": 0x1, "WAH": 0x2, "DST": 0x4, "NS": 0x8, "AMP": 0x10, "NR": 0x20,
+                   "CAB": 0x40, "EQ": 0x80, "MOD": 0x100, "DLY": 0x200, "RVB": 0x400, "VOL": 0x800}
+
+
+def module_mask(prst: bytes) -> int:
+    return sum(bit for m, bit in MODULE_MASK_BIT.items() if prst[MODULE_ENABLE_OFFSET[m]])
+
+
+def set_module_mask(b: bytearray) -> None:
+    mask = module_mask(b)
+    b[MODULE_MASK_OFF] = mask & 0xFF
+    b[MODULE_MASK_OFF + 1] = mask >> 8
+
+
+def compute_checksum(prst: bytes) -> int:
+    """CRC-16 (poly 0x8005 reflected, init 0xE011, no final xor) of bytes 0x10..0x463, which is what the
+    pedal stores big-endian at 0x0E-0x0F. Independent of the slot index (byte 4)."""
+    crc = CHECKSUM_INIT
+    for b in bytes(prst[CHECKSUM_START:CHECKSUM_END]):
+        crc ^= b
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
+    return crc
+
+
+def read_checksum(prst: bytes) -> int:
+    return (prst[CHECKSUM_OFF] << 8) | prst[CHECKSUM_OFF + 1]
+
+
+def checksum_ok(prst: bytes) -> bool:
+    return read_checksum(prst) == compute_checksum(prst)
+
+
+def fix_checksum(buf: bytearray) -> None:
+    """Store the checksum in place (call after editing a body)."""
+    crc = compute_checksum(buf)
+    buf[CHECKSUM_OFF] = crc >> 8
+    buf[CHECKSUM_OFF + 1] = crc & 0xFF
 
 
 def build_from_skeleton(
@@ -318,4 +370,5 @@ def build_from_skeleton(
             write_module_param_by_alg_id(out, module, int(alg_id), value)
     for module, enabled in (module_enabled or {}).items():
         write_module_enabled(out, module, enabled)
+    fix_checksum(out)
     return bytes(out)

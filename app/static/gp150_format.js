@@ -6,10 +6,11 @@
  * skeleton-editing writer) so the GP-50/GP-5 -> GP-150 converter can run
  * 100% client-side (no Python backend) — see convert_gp50_to_gp150.js.
  * See patch/gp150_format.py's own docstring for what's confirmed and why
- * build_from_skeleton() is safe to have despite the file's own checksum and
- * ~168-byte tail still being undecoded: every write here targets a field the
- * read side already fully understands, and everything else is left exactly
- * as the skeleton (a real, valid GP-150 .prst) already had it.
+ * build_from_skeleton() is safe to have despite the ~168-byte tail still being
+ * undecoded: every write here targets a field the read side already fully
+ * understands, and everything else is left exactly as the skeleton (a real,
+ * valid GP-150 .prst) already had it; the file checksum is recomputed
+ * (computeChecksum()).
  *
  * Exposes window.GP150Format in the browser and module.exports under node
  * (for the oracle cross-check, app/tests/test_gp150_convert_js.mjs).
@@ -298,6 +299,19 @@
 
   function writeModuleEnabled(b, module, enabled) {
     b[MODULE_ENABLE_OFFSET[module]] = enabled ? 1 : 0;
+    setModuleMask(b);
+  }
+
+  // The pedal keeps a bitmask of the enabled modules at 0x444 (u16 LE) and rewrites it itself when it stores a
+  // patch (found 2026-10: a body written with the factory-empty mask came back with the right one, and the
+  // checksum recomputed over it). One bit per module; reproduces 200/200 real files. The NS bit (0x8) is
+  // inferred from the sequence: NS was never enabled in the corpus.
+  const MODULE_MASK_OFF = 0x444;
+  const MODULE_MASK_BIT = { PRE: 0x1, WAH: 0x2, DST: 0x4, NS: 0x8, AMP: 0x10, NR: 0x20, CAB: 0x40, EQ: 0x80, MOD: 0x100, DLY: 0x200, RVB: 0x400, VOL: 0x800 };
+  const moduleMask = (b) => Object.entries(MODULE_MASK_BIT).reduce((m, [name, bit]) => m | (b[MODULE_ENABLE_OFFSET[name]] ? bit : 0), 0);
+  function setModuleMask(b) {
+    const m = moduleMask(b);
+    b[MODULE_MASK_OFF] = m & 0xff; b[MODULE_MASK_OFF + 1] = m >> 8;
   }
 
   // --- GP150-10: patch-level settings (write) ----------------------------
@@ -338,9 +352,29 @@
     dv(b).setUint32(FS_SETTING_ENTRY_OFF + index * 4, bits >>> 0, true);
   }
 
+  // The file's own 0x0E-0x0F checksum: CRC-16, polynomial 0x8005 (reflected), init 0xE011, over bytes
+  // 0x10..0x463, stored big-endian (reproduces 200/200 real files and 200 bodies read from the pedal).
+  const CHECKSUM_OFF = 0x0e, CHECKSUM_START = 0x10, CHECKSUM_END = 1124, CHECKSUM_INIT = 0xe011;
+  function computeChecksum(prst) {
+    const b = u8(prst);
+    let crc = CHECKSUM_INIT;
+    for (let i = CHECKSUM_START; i < CHECKSUM_END; i++) {
+      crc ^= b[i];
+      for (let k = 0; k < 8; k++) crc = crc & 1 ? (crc >>> 1) ^ 0xa001 : crc >>> 1;
+    }
+    return crc;
+  }
+  const readChecksum = (prst) => (u8(prst)[CHECKSUM_OFF] << 8) | u8(prst)[CHECKSUM_OFF + 1];
+  const checksumOk = (prst) => readChecksum(prst) === computeChecksum(prst);
+  function fixChecksum(b) {   // in place
+    const crc = computeChecksum(b);
+    b[CHECKSUM_OFF] = crc >> 8; b[CHECKSUM_OFF + 1] = crc & 0xff;
+    return b;
+  }
+
   // Edit a real, valid GP-150 .prst (`skeleton`) and return the result. Any
   // field left undefined/omitted keeps the skeleton's own value untouched —
-  // the checksum, slot index, and every still-undecoded byte always do.
+  // the slot index and every still-undecoded byte always do; the checksum is recomputed.
   function buildFromSkeleton(skeleton, { name, chainOrder, moduleModels, moduleParams, moduleEnabled } = {}) {
     checkLength(skeleton);
     const out = new Uint8Array(u8(skeleton));
@@ -351,7 +385,7 @@
       for (const [algId, value] of Object.entries(params)) writeModuleParamByAlgId(out, module, Number(algId), value);
     }
     for (const [module, enabled] of Object.entries(moduleEnabled || {})) writeModuleEnabled(out, module, enabled);
-    return out;
+    return fixChecksum(out);
   }
 
   const API = {
@@ -362,7 +396,7 @@
     readModuleEnabled, readAllModuleEnabled, moduleParamOffset, readModuleParamByAlgId,
     readModelParams, decode,
     writeName, writeOrder, writeModuleModel, writeModuleParamByAlgId, writeModuleEnabled,
-    buildFromSkeleton,
+    buildFromSkeleton, moduleMask, setModuleMask, computeChecksum, readChecksum, checksumOk, fixChecksum,
     // GP150-10
     PRESET_INFO_OFF, PRESET_BPM_OFF, PATCH_VOL_OFF, CURRENT_MODE_OFF, PRESET_NAM_OFF,
     QUICK_KNOB_OFF, QUICK_KNOB_ENTRY_OFF, QUICK_KNOB_COUNT, QUICK_KNOB_ENTRY_LEN,
