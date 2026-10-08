@@ -68,6 +68,27 @@ class ConversionError(ValueError):
     model on a GP-50 -> GP-5 conversion)."""
 
 
+SUPPORTED_KEYS = ("gp5", "gp50")
+
+
+def _require_supported(key: str, role: str) -> None:
+    """This module is GP-5<->GP-50 only (see the module docstring) — it reads
+    the source through TLV walks (_find_tlv, _read_vol_bpm, ...) that assume
+    that container shape. GP-150 has none of that (re/DEVICE_GP150.md) and
+    isn't just unsupported, it's actively misleading here: fmt.detect() now
+    recognizes it (GP150-3), so without this guard a GP-150 upload would
+    silently walk its body as if it were GP-5/GP-50 TLVs and either produce a
+    corrupted output or raise a confusing unrelated error, instead of a clear
+    one naming the actual problem."""
+    if key not in SUPPORTED_KEYS:
+        raise ConversionError(
+            f"{role} device {key!r} is not GP-5/GP-50 — this converter only "
+            f"handles {'/'.join(SUPPORTED_KEYS)}. GP-150 uses a different, "
+            f"unrelated .prst container (see re/DEVICE_GP150.md); there is no "
+            f"conversion path for it yet."
+        )
+
+
 class Problem(NamedTuple):
     block_index: int
     fxid: int
@@ -145,6 +166,9 @@ def _trailer_block(profile: DeviceProfile, fs1: int, fs2: int) -> bytes:
 def check_convertible(prst: bytes, target_key: str) -> list[Problem]:
     """Return the blocks that block a lossless conversion (empty = clean). Only
     GP-50 -> GP-5 can produce problems (GP-50-only models)."""
+    source = fmt.detect(prst)
+    _require_supported(source.key, "source")
+    _require_supported(target_key, "target")
     target = fmt.profile_for(target_key)
     if target.key != "gp5":
         return []
@@ -161,6 +185,8 @@ def convert(prst: bytes, target_key: str, *, force: bool = False) -> bytes:
     already the target device. Raises ConversionError on a lossy GP-50 -> GP-5
     unless force=True (which drops the offending model to 'empty')."""
     source = fmt.detect(prst)
+    _require_supported(source.key, "source")
+    _require_supported(target_key, "target")
     target = fmt.profile_for(target_key)
     if source.key == target.key:
         return prst

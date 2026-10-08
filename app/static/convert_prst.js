@@ -4,7 +4,8 @@
 // fully client-side via window.PRST (app/static/prst.js) — a byte-for-byte port
 // of patch/convert.py, verified over the whole corpus (app/tests/test_prst_js.mjs).
 // No backend call, so this page works as a static host (the beta-2 target). The
-// NAM (A2 -> A1) section above is handled by app.js.
+// NAM (A2 -> A1) section above is just a link to the standalone converter tool
+// (CONV-2) — no local trainer UI on this page anymore.
 (() => {
   const PRST = window.PRST;
 

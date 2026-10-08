@@ -12,6 +12,7 @@ import struct
 
 import pytest
 
+from app.tests import gp150_corpus as corpus
 from patch import convert, device_write as dw, prst_format as fmt
 
 PROJECT_ROOT = os.path.dirname(
@@ -191,3 +192,29 @@ def test_send_gate_refuses_unverified_gp5():
 
 def test_write_verified_map():
     assert dw.WRITE_VERIFIED == {"gp50": True, "gp5": False}
+
+
+# --- GP-150 must be refused, not silently mis-walked (GP150-3 follow-up) --------
+#
+# prst_format.detect() recognizes GP-150 since GP150-3, but convert.py's TLV
+# walk (_find_tlv, _read_vol_bpm, ...) only makes sense for GP-5/GP-50. A
+# GP-150 upload must get a clear ConversionError, not a silently-garbage
+# "converted" file or an unrelated crash from walking its body as fake TLVs.
+
+GP150_FILES = corpus.corpus_files()
+
+
+def test_gp150_source_refused_not_silently_converted():
+    assert GP150_FILES
+    src = open(GP150_FILES[0], "rb").read()
+    assert fmt.detect(src).key == "gp150"  # confirms the regression is reachable
+    with pytest.raises(convert.ConversionError, match="gp150"):
+        convert.check_convertible(src, "gp50")
+    with pytest.raises(convert.ConversionError, match="gp150"):
+        convert.convert(src, "gp50")
+
+
+def test_gp150_target_refused():
+    src = open(GP50_FILES[0], "rb").read() if GP50_FILES else open(GP5_FILES[0], "rb").read()
+    with pytest.raises(convert.ConversionError, match="gp150"):
+        convert.convert(src, "gp150")

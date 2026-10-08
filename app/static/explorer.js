@@ -204,6 +204,7 @@
   }
 
   const expanded = new Set(); // preset slots currently expanded
+  const selected = new Set(); // preset slots checked for bulk actions (EXP-5)
   let activeSlot = null; // the preset currently SELECTED on the connected pedal
   let deviceLive = { connected: false, device: null }; // /api/device/status
   const blockToggled = new Set(); // `${slot}:${blkIdx}` blocks flipped from their default expand state (active=open)
@@ -546,6 +547,20 @@
   // Clear Preset: overwrite the slot with the factory-default "GP-50" blank. Writes
   // the pedal directly over WebMIDI (like Live edit); confirmed first. Drops any
   // pending edits and exits live mode for the slot, then syncs the cache to blank.
+  // Overwrite `slot` on the pedal with a blank preset. Shared by the single-row
+  // Clear action and EXP-5d's bulk "Reset selected" — throws on failure so
+  // callers decide how to report/stop.
+  async function clearSlotOnDevice(slot) {
+    if (!DeviceBridge.connected()) await DeviceBridge.connect();
+    const blank = window.PRST.blankPrst((inventoryDevice && inventoryDevice.key) || "gp50");
+    await withTimeout(
+      DeviceBridge.writeSlotVerified(slot, blank), 20000,
+      "clear timed out — is this tab in the background? (bring it to the front)");
+    edits.delete(slot);
+    if (liveSlot === slot) { liveSlot = null; liveBase = null; }
+    await syncSlotCache(slot, blank);
+  }
+
   async function clearPreset(p) {
     if (!(window.DeviceBridge && DeviceBridge.webmidiAvailable())) {
       UI.toast("Clear needs Chrome or Edge (WebMIDI).", "err");
@@ -557,20 +572,99 @@
     if (!ok) return;
     const note = listEl.querySelector(`.save-bar[data-slot="${p.slot}"] .save-note`);
     try {
-      if (!DeviceBridge.connected()) { if (note) note.textContent = "Connecting to pedal…"; await DeviceBridge.connect(); }
-      const blank = window.PRST.blankPrst((inventoryDevice && inventoryDevice.key) || "gp50");
       if (note) note.textContent = `Clearing slot ${p.slot}…`;
-      await withTimeout(
-        DeviceBridge.writeSlot(p.slot, blank), 15000,
-        "clear timed out — is this tab in the background? (bring it to the front)");
-      edits.delete(p.slot);
-      if (liveSlot === p.slot) { liveSlot = null; liveBase = null; }
-      await syncSlotCache(p.slot, blank);
+      await clearSlotOnDevice(p.slot);
       renderPresets();
       UI.toast(`Cleared slot ${p.slot} to a blank preset.`, "ok");
     } catch (err) {
       if (note) note.textContent = `Clear failed: ${err.message}`;
       UI.toast(`Clear failed: ${err.message}`, "err");
+    }
+  }
+
+  // EXP-5d: bulk "Reset selected" — same device write as a single Clear, just
+  // looped sequentially (matches this codebase's existing convention for
+  // multi-slot device writes — see runReorderWrites — one write at a time,
+  // stop and report on the first failure rather than racing several writes).
+  async function bulkReset() {
+    if (!(window.DeviceBridge && DeviceBridge.webmidiAvailable())) {
+      UI.toast("Reset needs Chrome or Edge (WebMIDI).", "err");
+      return;
+    }
+    const slots = [...selected].sort((a, b) => a - b);
+    if (!slots.length) return;
+    const ok = await UI.confirmDialog(
+      `Clear ${slots.length} preset${slots.length === 1 ? "" : "s"} to blank? This overwrites each slot on the pedal and can't be undone from here. Make sure Valeton Suite is closed.`,
+      "Reset selected");
+    if (!ok) return;
+    const status = $("bulk-status");
+    let done = 0;
+    for (const slot of slots) {
+      status.textContent = `Clearing ${done + 1}/${slots.length} — slot ${slot}…`;
+      try {
+        await clearSlotOnDevice(slot);
+        done++;
+      } catch (err) {
+        status.textContent = "";
+        selected.clear();
+        renderPresets();
+        UI.toast(`Stopped after ${done}/${slots.length} — slot ${slot} failed: ${err.message}`, "err");
+        return;
+      }
+    }
+    status.textContent = "";
+    selected.clear();
+    renderPresets();
+    UI.toast(`Cleared ${done} preset${done === 1 ? "" : "s"} to blank.`, "ok");
+  }
+
+  // EXP-5e: bulk export — either a single .zip download (works in any browser)
+  // or, where the File System Access API exists (Chrome/Edge), saving each
+  // file individually into a user-chosen folder. Both fetch raw, unmodified
+  // .prst bytes from /api/device/export — no pedal/WebMIDI needed, this is a
+  // local-file feature (offline-friendly, unlike Reset).
+  async function bulkExport(mode) {
+    const slots = [...selected].sort((a, b) => a - b);
+    if (!slots.length) return;
+    const status = $("bulk-status");
+    try {
+      if (mode === "zip") {
+        status.textContent = `Exporting ${slots.length} preset${slots.length === 1 ? "" : "s"}…`;
+        const r = await fetch("/api/device/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patch_slots: slots }),
+        });
+        if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+        await UI.downloadResponse(r, "presets.zip");
+        UI.toast(`Exported ${slots.length} preset${slots.length === 1 ? "" : "s"}.`, "ok");
+      } else {
+        const dir = await window.showDirectoryPicker({ mode: "readwrite" });
+        let done = 0;
+        for (const slot of slots) {
+          status.textContent = `Exporting ${done + 1}/${slots.length} — slot ${slot}…`;
+          const r = await fetch("/api/device/export", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ patch_slots: [slot] }),
+          });
+          if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+          const cd = r.headers.get("content-disposition") || "";
+          const m = /filename="([^"]+)"/.exec(cd);
+          const fname = m ? m[1] : `${slot}.prst`;
+          const handle = await dir.getFileHandle(fname, { create: true });
+          const writable = await handle.createWritable();
+          await writable.write(await r.blob());
+          await writable.close();
+          done++;
+        }
+        UI.toast(`Exported ${done} preset${done === 1 ? "" : "s"} to the chosen folder.`, "ok");
+      }
+    } catch (err) {
+      if (err.name === "AbortError") { status.textContent = ""; return; } // user cancelled the folder picker
+      UI.toast(`Export failed: ${err.message}`, "err");
+    } finally {
+      status.textContent = "";
     }
   }
 
@@ -741,6 +835,11 @@
     // draggable signal-chain strip (block reordering)
     d.appendChild(buildChainStrip(p));
 
+    // block cards pack into a responsive grid (3-col wide / 2-col medium /
+    // 1-col narrow, EXP-8) instead of stacking full-width one per row.
+    const blockGrid = document.createElement("div");
+    blockGrid.className = "block-grid";
+
     // per-block: bypass toggle + editable params, rendered in CHAIN order (blkIdx
     // stays the model-record index, so all edits keep keying by record index).
     curOrder(p).forEach((blkIdx) => {
@@ -882,8 +981,9 @@
         });
         bd.appendChild(grid);
       }
-      d.appendChild(bd);
+      blockGrid.appendChild(bd);
     });
+    d.appendChild(blockGrid);
 
     return d;
   }
@@ -1139,7 +1239,7 @@
     const base = liveBase;
     liveNote(slot, "Restoring original settings to the pedal…");
     try {
-      await withTimeout(DeviceBridge.writeSlot(slot, base), 15000, "restore timed out (foreground the tab)");
+      await withTimeout(DeviceBridge.writeSlotVerified(slot, base), 20000, "restore timed out (foreground the tab)");
     } catch (e) {
       liveNote(slot, `Restore failed: ${e.message}`, "err");
       return;
@@ -1160,7 +1260,7 @@
     liveNote(slot, "Committing changes to the pedal…");
     const edited = window.PRST.applyEdits(liveBase, editsSpec(slot)); // ensure the very latest is written
     try {
-      await withTimeout(DeviceBridge.writeSlot(slot, edited), 15000, "keep timed out (foreground the tab)");
+      await withTimeout(DeviceBridge.writeSlotVerified(slot, edited), 20000, "keep timed out (foreground the tab)");
     } catch (e) {
       liveNote(slot, `Keep failed: ${e.message}`, "err");
       return;
@@ -1215,6 +1315,7 @@
   const RECENT_SNAP_MS = 2 * 60 * 1000; // a scan this fresh can be reused without rescanning
 
   const bytesToB64 = (u) => btoa(String.fromCharCode.apply(null, u));
+  const b64ToBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   const mkBtn = (text, cls) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.textContent = text; return b; };
   const fmtDur = (ms) => { const s = Math.round(ms / 1000); if (s < 60) return `${s}s`; return `${Math.floor(s / 60)}m ${s % 60}s`; };
   function eqBytes(a, z) { if (!a || !z || a.length !== z.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== z[i]) return false; return true; }
@@ -1473,6 +1574,83 @@
     UI.toast("Saved a bank backup (all 100 presets).", "ok");
   }
 
+  // REORD-1: restore a bank-backup JSON (downloadBankBackup's own format) back
+  // to the pedal. Independent of reorder mode — this is its own bulk write,
+  // not tied to a drag-reorder — so it lives as a top-level device-bar button.
+  async function restoreFromBackupFile(file) {
+    let doc;
+    try {
+      doc = JSON.parse(await file.text());
+    } catch (e) {
+      UI.toast(`Not a valid backup file: ${e.message}`, "err");
+      return;
+    }
+    if (!doc || !Array.isArray(doc.presets) || !doc.presets.length) {
+      UI.toast("Not a valid bank backup file (missing/empty 'presets').", "err");
+      return;
+    }
+    if (inventoryDevice && doc.device && doc.device !== inventoryDevice.key) {
+      UI.toast(`Backup is for ${doc.device}, but the loaded presets are ${inventoryDevice.name}. Refusing to restore.`, "err");
+      return;
+    }
+    const expectedLen = (inventoryDevice && inventoryDevice.prst_len) || 552;
+    let writes;
+    try {
+      writes = doc.presets.map((p) => {
+        const bytes = b64ToBytes(p.b64);
+        if (bytes.length !== expectedLen)
+          throw new Error(`slot ${p.slot} is ${bytes.length} bytes, expected ${expectedLen}`);
+        return { slot: p.slot, bytes, from: p.name };
+      });
+    } catch (e) {
+      UI.toast(`Backup file looks corrupt: ${e.message}`, "err");
+      return;
+    }
+    if (!(window.DeviceBridge && DeviceBridge.webmidiAvailable())) {
+      UI.toast("Restore needs Chrome or Edge (WebMIDI).", "err");
+      return;
+    }
+    const takenAt = doc.takenAt ? new Date(doc.takenAt).toLocaleString() : "an unknown time";
+    const ok = await UI.confirmDialog(
+      `Restore ${writes.length} preset${writes.length === 1 ? "" : "s"} from a backup taken ${takenAt}? This overwrites those slots on the pedal and can't be undone. Make sure Valeton Suite is closed.`,
+      "Restore backup");
+    if (!ok) return;
+    try { if (!DeviceBridge.connected()) await DeviceBridge.connect(); }
+    catch (e) { UI.toast(`Connect the pedal first: ${e.message}`, "err"); return; }
+    await runRestoreWrites(writes);
+  }
+
+  // Sequential writes with the shared scan-progress bar, same stop-on-first-
+  // failure discipline as bulkReset/runReorderWrites — a restore has no
+  // "previous state" to roll back to (it's the recovery path itself), so
+  // reporting what got written is the right failure story here.
+  async function runRestoreWrites(writes) {
+    $("scan-progress").hidden = false;
+    $("scan-fill").style.width = "0%";
+    const done = [];
+    for (let i = 0; i < writes.length; i++) {
+      const w = writes[i];
+      $("scan-status").textContent = `Restoring ${i + 1}/${writes.length} — slot ${w.slot}${w.from ? ` "${w.from}"` : ""}…`;
+      try {
+        await withTimeout(
+          DeviceBridge.writeSlotVerified(w.slot, w.bytes), 20000,
+          "write timed out — is this tab in the background? (bring it to the front)");
+        done.push(w);
+        $("scan-fill").style.width = `${Math.round(((i + 1) / writes.length) * 100)}%`;
+      } catch (e) {
+        await commitReorderCache(done);
+        $("scan-status").textContent =
+          `Restore failed at slot ${w.slot} (${e.message}). ${done.length} of ${writes.length} presets were restored.`;
+        UI.toast(`Restore stopped after ${done.length}/${writes.length} — slot ${w.slot} failed: ${e.message}`, "err");
+        return;
+      }
+    }
+    await commitReorderCache(done);
+    $("scan-status").textContent = `✓ Restored ${done.length} preset${done.length === 1 ? "" : "s"}.`;
+    setTimeout(() => { $("scan-progress").hidden = true; }, 3000);
+    UI.toast(`Restored ${done.length} preset${done.length === 1 ? "" : "s"} from backup.`, "ok");
+  }
+
   async function finalizeInlineReorder() {
     if (!reorderMode) return;
     const order = reorderMode.order;
@@ -1518,7 +1696,7 @@
       const w = writes[i];
       txt.textContent = `Writing ${i + 1}/${writes.length} — slot ${w.slot} (was #${w.from})…`;
       try {
-        await withTimeout(DeviceBridge.writeSlot(w.slot, w.bytes), 15000, "write timed out — is this tab in the background? (bring it to the front)");
+        await withTimeout(DeviceBridge.writeSlotVerified(w.slot, w.bytes), 20000, "write timed out — is this tab in the background? (bring it to the front)");
         done.push(w);
         fill.style.width = `${Math.round(((i + 1) / writes.length) * 100)}%`;
       } catch (e) {
@@ -1563,7 +1741,7 @@
       const dest = done[i].slot;
       txt.textContent = `Rolling back ${i + 1}/${done.length} — slot ${dest}…`;
       try {
-        await withTimeout(DeviceBridge.writeSlot(dest, reorderSnapshot.bytes[dest]), 15000, "rollback timed out (foreground the tab)");
+        await withTimeout(DeviceBridge.writeSlotVerified(dest, reorderSnapshot.bytes[dest]), 20000, "rollback timed out (foreground the tab)");
         rolled.push({ slot: dest, bytes: reorderSnapshot.bytes[dest] });
         fill.style.width = `${Math.round(((i + 1) / done.length) * 100)}%`;
       } catch (e) { UI.toast(`Rollback stopped at slot ${dest}: ${e.message}`, "err"); break; }
@@ -1576,6 +1754,7 @@
 
   function renderPresets() {
     listEl.classList.toggle("reordering", !!reorderMode);
+    $("bulk-bar").hidden = !!reorderMode; // list is a reorder surface, not a selection one
     if (reorderMode) { renderReorderList(); return; }
     const shown = patches.filter((p) => matchesFilters(p) && matchesSearch(p));
     listEl.innerHTML = "";
@@ -1594,6 +1773,20 @@
         `<span class="preset-num">#${p.slot}</span> <span class="preset-name">${curName(p).replace(/</g, "&lt;")}</span>` +
         (isActive ? ' <span class="badge active-badge">● Active on pedal</span>' : "") +
         (p.uses_snaptone ? ' <span class="badge st">SnapTone</span>' : "");
+      // EXP-5a: bulk-select checkbox — inserted before the grip below so the
+      // grip's own insertBefore(head.firstChild) lands it to checkbox's LEFT
+      // (grip first, checkbox to its right, per the backlog spec).
+      const selBox = document.createElement("input");
+      selBox.type = "checkbox";
+      selBox.className = "row-select";
+      selBox.checked = selected.has(p.slot);
+      selBox.setAttribute("aria-label", `Select preset ${p.slot} for bulk actions`);
+      selBox.addEventListener("click", (ev) => ev.stopPropagation());
+      selBox.addEventListener("change", () => {
+        if (selBox.checked) selected.add(p.slot); else selected.delete(p.slot);
+        updateBulkBar();
+      });
+      head.insertBefore(selBox, head.firstChild);
       // reorder grip (left of the slot number) → drag the row to a new slot
       if (window.DeviceBridge && DeviceBridge.webmidiAvailable()) {
         const grip = document.createElement("button");
@@ -1635,6 +1828,25 @@
       }
       listEl.appendChild(li);
     });
+    updateBulkBar(shown);
+  }
+
+  // EXP-5b/c: keep the "select all" checkbox, count, and action-button enabled
+  // state in sync with `selected` and the currently-shown (filtered) rows.
+  function updateBulkBar(shown) {
+    shown = shown || patches.filter((p) => matchesFilters(p) && matchesSearch(p));
+    // drop selections for presets no longer shown (deleted slot, filtered out, etc.)
+    const shownSlots = new Set(shown.map((p) => p.slot));
+    for (const s of [...selected]) if (!shownSlots.has(s)) selected.delete(s);
+    const n = selected.size;
+    const allToggle = $("select-all-toggle");
+    const countLbl = $("bulk-count");
+    allToggle.checked = n > 0 && n === shown.length;
+    allToggle.indeterminate = n > 0 && n < shown.length;
+    countLbl.textContent = n > 0 ? `${n} selected` : "Select all";
+    $("bulk-reset-btn").disabled = n === 0;
+    $("bulk-export-zip-btn").disabled = n === 0;
+    $("bulk-export-folder-btn").disabled = n === 0;
   }
 
   // reorder-mode rows: compact, collapsed, numbered by DESTINATION slot
@@ -1724,6 +1936,28 @@
   $("save-filter").addEventListener("click", saveCurrent);
   $("official-toggle").addEventListener("change", renderPresets);
   searchEl.addEventListener("input", render);
+
+  // EXP-5b: select all/none over the currently-shown (filtered) rows.
+  $("select-all-toggle").addEventListener("change", (ev) => {
+    const shown = patches.filter((p) => matchesFilters(p) && matchesSearch(p));
+    if (ev.target.checked) shown.forEach((p) => selected.add(p.slot));
+    else shown.forEach((p) => selected.delete(p.slot));
+    renderPresets();
+  });
+  // EXP-5e: folder export needs the File System Access API — Chrome/Edge only.
+  if (window.showDirectoryPicker) $("bulk-export-folder-btn").hidden = false;
+  $("bulk-reset-btn").addEventListener("click", bulkReset);
+  $("bulk-export-zip-btn").addEventListener("click", () => bulkExport("zip"));
+  $("bulk-export-folder-btn").addEventListener("click", () => bulkExport("folder"));
+
+  // REORD-1: restore a bank backup — click the button, pick a file, go.
+  $("restore-backup-btn").addEventListener("click", () => $("restore-backup-input").click());
+  $("restore-backup-input").addEventListener("change", async () => {
+    const input = $("restore-backup-input");
+    const file = input.files[0];
+    input.value = ""; // allow re-picking the same file next time
+    if (file) await restoreFromBackupFile(file);
+  });
 
   async function loadInventory() {
     const [inv, fac] = await Promise.all([

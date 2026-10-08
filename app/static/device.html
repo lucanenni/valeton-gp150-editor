@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Valeton Companion — Captures &amp; IRs</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/gp150.css" />
 </head>
 <body>
   <header>
@@ -49,24 +50,253 @@
 
     <section class="card">
       <div class="dc-section-head">
-        <h2>SnapTones</h2><span class="count" id="st-count"></span>
+        <h2 id="st-heading">SnapTones</h2><span class="count" id="st-count"></span>
         <span class="spacer"></span>
-        <span class="subtitle" style="font-size:0.78rem">your NAM captures</span>
+        <span class="subtitle" id="st-subtitle" style="font-size:0.78rem">your NAM captures</span>
       </div>
       <div id="st-grid" class="asset-grid"></div>
       <p id="st-empty" class="subtitle" hidden>No SnapTones loaded. Sync from the device to read them.</p>
+
+      <!-- Shown instead of the grid above when a GP-150 is the detected
+           device -- a user only ever has one pedal connected at a time, so
+           this replaces the GP-50 view rather than sitting alongside it. -->
+      <div id="gp150-snaptones-view" class="gp150-live-view" hidden>
+        <div class="gp150-live-row">
+          <span id="gp150-usage-status" class="subtitle"></span>
+          <button type="button" id="gp150-usage-rescan-btn">Rescan presets</button>
+        </div>
+        <div class="gp150-live-row">
+          <button type="button" id="gp150-list-snaptones-btn">List SnapTones</button>
+          <span id="gp150-list-snaptones-status" class="subtitle"></span>
+        </div>
+        <div id="gp150-list-snaptones-error" class="error-banner" role="alert" hidden></div>
+        <div id="gp150-snaptone-list" class="asset-grid"></div>
+      </div>
     </section>
 
     <section class="card">
       <div class="dc-section-head">
-        <h2>User IRs</h2><span class="count" id="ir-count"></span>
+        <h2 id="ir-heading">User IRs</h2><span class="count" id="ir-count"></span>
         <span class="spacer"></span>
-        <span class="subtitle" style="font-size:0.78rem">your uploaded cabs</span>
+        <span class="subtitle" id="ir-subtitle" style="font-size:0.78rem">your uploaded cabs</span>
       </div>
       <div id="ir-grid" class="asset-grid"></div>
       <p id="ir-empty" class="subtitle" hidden>No user IRs loaded.</p>
+
+      <div id="gp150-user-irs-view" class="gp150-live-view" hidden>
+        <div class="gp150-live-row">
+          <button type="button" id="gp150-list-user-irs-btn">List User IRs</button>
+          <span id="gp150-list-user-irs-status" class="subtitle"></span>
+        </div>
+        <div id="gp150-list-user-irs-error" class="error-banner" role="alert" hidden></div>
+        <div id="gp150-user-ir-list" class="asset-grid"></div>
+      </div>
+    </section>
+
+    <!-- GP-50 has no NAM equivalent, so this section only ever appears
+         once a GP-150 is the detected device. -->
+    <section class="card" id="nam-section" hidden>
+      <div class="dc-section-head">
+        <h2>NAM</h2>
+        <span class="spacer"></span>
+        <span class="subtitle" style="font-size:0.78rem">read live over WebMIDI</span>
+      </div>
+      <div class="gp150-live-row">
+        <button type="button" id="gp150-list-nam-btn">List NAM</button>
+        <span id="gp150-list-nam-status" class="subtitle"></span>
+      </div>
+      <div id="gp150-list-nam-error" class="error-banner" role="alert" hidden></div>
+      <div id="gp150-nam-list" class="asset-grid"></div>
+    </section>
+
+    <section class="card" id="gp150-upload-section" hidden>
+      <div class="dc-section-head">
+        <h2>Upload to GP-150</h2>
+        <span class="spacer"></span>
+        <span class="subtitle" style="font-size:0.78rem">needs a GP-150 on USB</span>
+      </div>
+      <div class="gp150-captures-columns">
+        <div>
+          <h4 class="gp150-ir-upload-heading">Upload NAM (A2 Lite)</h4>
+          <p class="subtitle info-text">
+            Only the "lite" WaveNet tier this pedal actually runs is
+            supported (<span id="gp150-nam-upload-weights-count">1871</span>
+            weights, one fixed architecture) — if your file is a
+            <code>SlimmableContainer</code> (like NAM's own trainer
+            produces), its lite submodel is picked automatically; a
+            "full"-only file or a different lite architecture is
+            rejected rather than guessed at. NAM's own writable range is
+            slots 1-20 (narrower than SnapTone's full 1-100 catalog) —
+            this overwrites whatever is currently in the chosen slot.
+          </p>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>File (.nam)</span>
+              <input type="file" id="gp150-nam-upload-file" accept=".nam,application/json" />
+            </label>
+          </div>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>Name</span>
+              <input type="text" id="gp150-nam-upload-name" maxlength="16" placeholder="e.g. Fender Bassman" />
+            </label>
+            <label class="gp150-ir-upload-field">
+              <span>Slot (1-20)</span>
+              <input type="number" id="gp150-nam-upload-slot" min="1" max="20" value="1" />
+            </label>
+            <button type="button" id="gp150-nam-upload-btn" disabled>Upload NAM</button>
+            <span id="gp150-nam-upload-status" class="subtitle"></span>
+          </div>
+          <div id="gp150-nam-upload-error" class="error-banner" role="alert" hidden></div>
+        </div>
+        <div>
+          <h4 class="gp150-ir-upload-heading">Upload IR</h4>
+          <p class="subtitle info-text">
+            Sends the file's raw PCM straight to the pedal — no
+            resampling or re-quantizing (that's exactly what Suite's own
+            upload does too). Only the first
+            <span id="gp150-ir-upload-max-ms">~46ms</span> of the file
+            fits in a slot; the rest is not sent. This overwrites
+            whatever is currently in the chosen slot.
+          </p>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>File (.wav)</span>
+              <input type="file" id="gp150-ir-upload-file" accept=".wav,audio/wav" />
+            </label>
+          </div>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>Name</span>
+              <input type="text" id="gp150-ir-upload-name" maxlength="16" placeholder="e.g. My IR" />
+            </label>
+            <label class="gp150-ir-upload-field">
+              <span>Slot</span>
+              <select id="gp150-ir-upload-slot"></select>
+            </label>
+            <button type="button" id="gp150-ir-upload-btn" disabled>Upload IR</button>
+            <span id="gp150-ir-upload-status" class="subtitle"></span>
+          </div>
+          <div id="gp150-ir-upload-error" class="error-banner" role="alert" hidden></div>
+        </div>
+        <div>
+          <h4 class="gp150-ir-upload-heading">Upload SnapTone (.clo)</h4>
+          <p class="subtitle info-text">
+            Uploads an already-built SnapTone/"Tone Catch" file verbatim: a
+            real <code>.clo</code> file (the format Suite itself saves them
+            in, starts with the bytes "VTSI") goes to a chosen library
+            slot. To build one from a NAM model or from recordings, use
+            the "Create SnapTone" sections. This
+            overwrites whatever is currently in that slot, and other
+            patches whose N→S module already points at it will change too.
+          </p>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>File (.clo)</span>
+              <input type="file" id="gp150-snaptone-upload-file" accept=".clo,application/octet-stream" />
+            </label>
+          </div>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>Name</span>
+              <input type="text" id="gp150-snaptone-upload-name" maxlength="16" placeholder="e.g. Fender Amp" />
+            </label>
+            <label class="gp150-ir-upload-field">
+              <span>Slot (1-100)</span>
+              <input type="number" id="gp150-snaptone-upload-slot" min="1" max="100" value="1" />
+            </label>
+            <button type="button" id="gp150-snaptone-upload-btn" disabled>Upload SnapTone</button>
+            <span id="gp150-snaptone-upload-status" class="subtitle"></span>
+          </div>
+          <div id="gp150-snaptone-upload-error" class="error-banner" role="alert" hidden></div>
+        </div>
+        <div>
+          <h4 class="gp150-ir-upload-heading">Create SnapTone from audio</h4>
+          <p class="subtitle info-text">
+            Builds a SnapTone from a recording of your amp: download the
+            70 s test signal with the button, play it through your amp, record what comes out from
+            the very start of playback (same length, nothing trimmed), and
+            pick the recording here. The algorithm: static waveshaper fit,
+            two transfer-function passes, iterative min-phase IR design,
+            spectral correction on the playing section. The finished
+            SnapTone is sent to the chosen slot — this overwrites whatever is
+            in it, and other patches pointing at that slot will change too.
+            The test signal is generated by this page, so the result can
+            differ slightly from a SnapTone made with Valeton Suite.
+          </p>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>Recorded amp output (.wav)</span>
+              <input type="file" id="gp150-clone-rec-file" accept=".wav,audio/wav" />
+            </label>
+            <div class="gp150-ir-upload-field">
+              <span>Test signal to play through the amp</span>
+              <button type="button" id="gp150-clone-ref-download">Download reference.wav</button>
+            </div>
+          </div>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>Name</span>
+              <input type="text" id="gp150-clone-upload-name" maxlength="16" placeholder="e.g. My Amp Test" />
+            </label>
+            <label class="gp150-ir-upload-field">
+              <span>Slot (1-100)</span>
+              <input type="number" id="gp150-clone-upload-slot" min="1" max="100" value="1" />
+            </label>
+            <button type="button" id="gp150-clone-upload-btn" disabled>Generate and upload</button>
+            <span id="gp150-clone-upload-status" class="subtitle"></span>
+          </div>
+          <div id="gp150-clone-upload-error" class="error-banner" role="alert" hidden></div>
+        </div>
+        <div>
+          <h4 class="gp150-ir-upload-heading">Create SnapTone from a .nam file</h4>
+          <p class="subtitle info-text">
+            Builds a SnapTone from a NAM/Neural Amp Modeler file: the
+            model's neural network (a WaveNet, computed here in the
+            browser) is run on a 70 s test signal generated by this page,
+            scaled and quantized, and the result goes through the amp
+            profiler. The finished SnapTone is then sent to the chosen slot
+            — this overwrites whatever is in it, and other patches pointing
+            at that slot will change too. Supports 48 kHz models in the
+            single-array shape this pedal's NAM slots use and the older
+            multi-array "classic" shape; anything else is refused with a
+            clear error. Results can differ slightly from a SnapTone made with
+            Valeton Suite (about a dB in level and a couple of dB of ripple,
+            mostly above 8 kHz).
+          </p>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>File (.nam)</span>
+              <input type="file" id="gp150-nam-clone-file" accept=".nam,application/json" />
+            </label>
+          </div>
+          <div class="gp150-live-row">
+            <label class="gp150-ir-upload-field">
+              <span>Name</span>
+              <input type="text" id="gp150-nam-clone-upload-name" maxlength="16" placeholder="e.g. My NAM Clone" />
+            </label>
+            <label class="gp150-ir-upload-field">
+              <span>Slot (1-100)</span>
+              <input type="number" id="gp150-nam-clone-upload-slot" min="1" max="100" value="1" />
+            </label>
+            <button type="button" id="gp150-nam-clone-upload-btn" disabled>Generate and upload</button>
+            <span id="gp150-nam-clone-upload-status" class="subtitle"></span>
+          </div>
+          <div id="gp150-nam-clone-upload-error" class="error-banner" role="alert" hidden></div>
+        </div>
+      </div>
     </section>
   </main>
+
+  <div id="info-modal" class="modal-overlay" hidden>
+    <div class="modal-card info-card">
+      <h3 id="info-modal-title" class="info-title"></h3>
+      <div id="info-modal-body" class="info-body"></div>
+      <div class="modal-actions">
+        <button type="button" id="info-modal-close" class="modal-btn primary">Close</button>
+      </div>
+    </div>
+  </div>
 
   <div id="tmpl-modal" class="modal-overlay" hidden>
     <div class="modal-card build-card">
@@ -95,5 +325,15 @@
   <script src="/static/static_api.js"></script>
   <script src="/static/device_core.js"></script>
   <script src="/static/device_a.js"></script>
+  <script src="/static/gp150_format.js"></script>
+  <script src="/static/webmidi_gp150.js"></script>
+  <script src="/static/gp150_usage.js"></script>
+  <script src="/static/gp150_upload_prep.js"></script>
+  <script src="/static/amp_profiler_dsp.js"></script>
+  <script src="/static/amp_profiler.js"></script>
+  <script src="/static/amp_profiler_reference.js"></script>
+  <script src="/static/nam_wavenet.js"></script>
+  <script src="/static/nam_wavenet_fast.js"></script>
+  <script src="/static/gp150_captures_ui.js"></script>
 </body>
 </html>

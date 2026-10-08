@@ -6,8 +6,10 @@
  *
  * Copies the JS/CSS/data, then rewrites the shipped HTML pages: /static/ paths ->
  * relative, nav routes -> .html files, and injects window.__VALETON_STATIC__ so
- * static_api.js serves /api/device/* in-page. Ships the Explorer, Converter, and
- * the Captures & IRs page — all backend-free.
+ * static_api.js serves /api/device/* in-page. Ships the Explorer, Converter,
+ * and the Captures & IRs page. GP150-8 (2026-09-20) folded the GP-150
+ * inspector/live-editor into the Explorer page itself (index.html) instead of
+ * a dedicated page of its own — see BACKLOG_GP150.md's GP150-8 entry.
  */
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, rmSync, copyFileSync, cpSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -32,8 +34,9 @@ if (!existsSync(resolve(staticDir, "data", "presets.json"))) {
 }
 cpSync(resolve(staticDir, "data"), resolve(dist, "data"), { recursive: true });
 
-// Site map: index.html = Explorer (landing), convert.html = Converter, device.html = Captures.
-// Original nav routes -> /explorer (Explorer), / (Converter), /device (Captures).
+// Site map: index.html = Explorer (landing, now also hosts GP-150), convert.html
+// = Converter, device.html = Captures. Original nav routes -> /explorer
+// (Explorer), / (Converter), /device (Captures).
 function processHtml(html) {
   html = html.replaceAll("/static/", "");
   html = html.replace(/href="\/explorer"/g, 'href="index.html"')   // Explorer -> landing
@@ -49,5 +52,5 @@ writeFileSync(resolve(dist, "convert.html"), processHtml(readFileSync(resolve(st
 writeFileSync(resolve(dist, "device.html"), processHtml(readFileSync(resolve(staticDir, "device.html"), "utf8")));
 
 const files = readdirSync(dist);
-console.log(`dist/ built: ${files.length} entries. index.html = Explorer (landing), convert.html = Converter, device.html = Captures.`);
+console.log(`dist/ built: ${files.length} entries. index.html = Explorer (landing, incl. GP-150), convert.html = Converter, device.html = Captures.`);
 console.log("serve dist/ on any static host (Netlify/Pages/S3). Chrome/Edge for WebMIDI.");

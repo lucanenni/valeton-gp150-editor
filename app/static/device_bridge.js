@@ -50,7 +50,48 @@
       if (!Bridge.connected()) throw new Error("not connected");
       return wr().writeSlot(slot, prst, { confirm: true });
     },
+
+    // WRITE-1: write, then read the slot back and compare byte-for-byte before
+    // trusting it. Under a throttled/backgrounded tab a write's own ACK count
+    // can undercount (the pedal got the packet, but the ACK message arrived
+    // too late for a backgrounded tab's timing window to see it) — so ACKs
+    // alone aren't proof, and a real GP-50 write is documented to round-trip
+    // byte-identical (re/DEVICE_WRITE.md) when it actually landed. Handles two
+    // distinct symptoms separately: a mismatched read that's just STALE (the
+    // device hadn't settled yet — retried a few times with a short pause,
+    // cheap) vs. a write that genuinely never landed (retried as a full
+    // write+verify cycle, up to `writeRetries` times). Throws if verification
+    // never succeeds. Used by the higher-stakes one-shot writes (clear,
+    // reorder, restore, live-edit keep/restore) — NOT the debounced live-param
+    // write, where the extra read round-trip per keystroke would cost more in
+    // feel than it's worth and the user already gets live visual feedback.
+    async writeSlotVerified(slot, prst, { writeRetries = 1, readRetries = 2, readRetryDelayMs = 200, allowUnverified } = {}) {
+      if (!Bridge.connected()) throw new Error("not connected");
+      let lastErr = null;
+      for (let w = 0; w <= writeRetries; w++) {
+        const result = await wr().writeSlot(slot, prst, { confirm: true, allowUnverified });
+        for (let r = 0; r <= readRetries; r++) {
+          if (r) await new Promise((res) => setTimeout(res, readRetryDelayMs));
+          try {
+            const readback = await dev().readSlotPrst(slot);
+            if (eqBytes(readback, prst)) return { ...result, verified: true };
+            lastErr = new Error(`slot ${slot}: read-back didn't match what was written`);
+          } catch (e) {
+            lastErr = new Error(`slot ${slot}: read-back after write failed: ${e.message}`);
+          }
+        }
+        // read-back never matched after readRetries — the write itself may not
+        // have landed; try sending it again from scratch.
+      }
+      throw lastErr;
+    },
   };
+
+  function eqBytes(a, z) {
+    if (!a || !z || a.length !== z.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== z[i]) return false;
+    return true;
+  }
 
   root.DeviceBridge = Bridge;
 })(typeof self !== "undefined" ? self : this);

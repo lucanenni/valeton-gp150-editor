@@ -3,6 +3,8 @@
 derived from the exported patch set + the decoded model catalog.
 """
 
+import os
+
 from fastapi.testclient import TestClient
 
 from app import patchlib
@@ -338,6 +340,106 @@ def test_swap_writes_both_bodies(monkeypatch):
     assert all(c[1] == 552 for c in calls)
 
 
+def test_reset_requires_confirm_and_known_slots():
+    assert (
+        client.post("/api/device/reset", json={"patch_slots": [15]}).status_code
+        == 400
+    )
+    assert (
+        client.post("/api/device/reset", json={"patch_slots": [], "confirm": True}).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/api/device/reset", json={"patch_slots": [999], "confirm": True}
+        ).status_code
+        == 404
+    )
+
+
+def test_reset_writes_the_factory_blank_to_each_slot(monkeypatch):
+    # hermetic: capture the .prst handed to the device, no MIDI/subprocess
+    from app import device_io
+    from patch import prst_format as fmt2
+
+    calls = []
+
+    def fake_write(prst, slot, timeout=30.0, allow_unverified=False):
+        calls.append((slot, bytes(prst)))
+        return {"ok": True, "sent": True, "acks": 29}
+
+    monkeypatch.setattr(device_io, "write_patch", fake_write)
+    r = client.post(
+        "/api/device/reset", json={"patch_slots": [15, 3], "confirm": True}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] and body["reset"] == [15, 3]
+    blank = fmt2.blank_patch("gp50")
+    assert [c[0] for c in calls] == [15, 3]
+    assert all(c[1] == blank for c in calls)
+
+
+def test_reset_stops_on_first_failure(monkeypatch):
+    from app import device_io
+
+    def fake_write(prst, slot, timeout=30.0, allow_unverified=False):
+        if slot == 3:
+            return {"ok": False, "error": "no ack"}
+        return {"ok": True, "sent": True, "acks": 29}
+
+    monkeypatch.setattr(device_io, "write_patch", fake_write)
+    r = client.post(
+        "/api/device/reset", json={"patch_slots": [15, 3, 21], "confirm": True}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert body["reset"] == [15]  # slot 3 failed before slot 21 was attempted
+    assert "slot 3" in body["error"]
+
+
+def test_replace_snaptone_requires_confirm_and_known_slots():
+    assert (
+        client.post(
+            "/api/device/replace-snaptone",
+            json={"patch_slots": [76], "target_ns_slot": 51},
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/api/device/replace-snaptone",
+            json={"patch_slots": [999], "target_ns_slot": 51, "confirm": True},
+        ).status_code
+        == 404
+    )
+
+
+def test_replace_snaptone_repoints_and_writes_back_to_the_same_slot(monkeypatch):
+    from app import device_io
+
+    calls = []
+
+    def fake_write(prst, slot, timeout=30.0, allow_unverified=False):
+        calls.append((slot, bytes(prst)))
+        return {"ok": True, "sent": True, "acks": 29}
+
+    monkeypatch.setattr(device_io, "write_patch", fake_write)
+    r = client.post(
+        "/api/device/replace-snaptone",
+        json={"patch_slots": [76], "target_ns_slot": 51, "confirm": True},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] and body["written"] == [76]
+    slot, data = calls[0]
+    assert slot == 76  # written back to the SAME slot, not a new one
+    off = fmt.model_rec_offset(data, patchlib.NS_CAT)
+    assert data[off] == 51
+    assert data[fmt.CRC_OFF] == fmt.crc8(data[fmt.CRC_OFF + 1 :])
+
+
 def test_scan_endpoints(monkeypatch):
     # hermetic: fake the background scan + status (no MIDI/subprocess)
     from app import device_io
@@ -477,6 +579,17 @@ def test_explorer_page_served():
     assert "/api/device" in js
     assert "gp50_savedFilters" in js  # saved filter sets persist to localStorage
     assert 'id="device-conn"' in html  # live-connection indicator for click-to-select
+    # EXP-5: bulk-select bar
+    assert 'id="bulk-bar"' in html and 'id="select-all-toggle"' in html
+    assert 'id="bulk-reset-btn"' in html and 'id="bulk-export-zip-btn"' in html
+    # REORD-1: bank-backup restore
+    assert 'id="restore-backup-btn"' in html and 'id="restore-backup-input"' in html
+    assert "restoreFromBackupFile" in js
+    # WRITE-1: the one-shot writes (clear/reorder/restore/live keep-restore) go
+    # through the verified write path, not the bare one
+    assert "writeSlotVerified" in js
+    bridge_js = client.get("/static/device_bridge.js").text
+    assert "writeSlotVerified" in bridge_js
 
 
 def test_shared_ui_core_loaded_by_both_pages():
@@ -583,6 +696,35 @@ def test_clone_bad_input_400():
     )
 
 
+def test_export_single_returns_the_original_file_untouched():
+    r = client.post("/api/device/export", json={"patch_slots": [76]})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/octet-stream"
+    assert r.content == open(patchlib.patch_file(76), "rb").read()
+
+
+def test_export_multiple_returns_a_zip():
+    r = client.post("/api/device/export", json={"patch_slots": [76, 15, 3]})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    import io
+    import zipfile
+
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    assert len(zf.namelist()) == 3
+    assert zf.read(os.path.basename(patchlib.patch_file(76))) == open(
+        patchlib.patch_file(76), "rb"
+    ).read()
+
+
+def test_export_bad_input_400():
+    assert client.post("/api/device/export", json={"patch_slots": []}).status_code == 400
+    assert (
+        client.post("/api/device/export", json={"patch_slots": [999]}).status_code
+        == 400
+    )
+
+
 def _a_snaptone_patch():
     """A device patch that uses a SnapTone (has an N->S block to repoint)."""
     inv = client.get("/api/device/inventory").json()
@@ -682,8 +824,12 @@ def test_device_page_and_static_served():
     assert client.get("/device-b").status_code == 404
     assert client.get("/device-c").status_code == 404
     # shared engine talks to the real API
-    assert "/api/device" in client.get("/static/device_core.js").text
-    assert "openBuildModal" in client.get("/static/device_core.js").text
+    core_js = client.get("/static/device_core.js").text
+    assert "/api/device" in core_js
+    assert "openBuildModal" in core_js
+    # CAP-2/CAP-3: reset + replace-SnapTone controls in the usage modal
+    assert 'id="dc-usage-bulk"' in core_js and 'id="dc-usage-reset-all"' in core_js
+    assert "resetPatches" in core_js and "replaceSnaptone" in core_js
 
 
 def test_nav_links_present_on_both_pages():

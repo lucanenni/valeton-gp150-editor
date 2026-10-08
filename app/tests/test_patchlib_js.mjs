@@ -37,6 +37,15 @@ function loadPresets() {
   }));
 }
 
+// The author's GP-50 preset exports (presetExports/) are not in the repo; without them there is nothing to compare.
+{
+  const dir = sourceDir();
+  if (!existsSync(dir) || !readdirSync(dir).some((f) => f.endsWith(".prst"))) {
+    console.log("skip: needs the GP-50 preset exports (presetExports/*.prst, not in the repo)");
+    process.exit(0);
+  }
+}
+
 let pass = 0, fail = 0;
 const fails = [];
 const check = (label, ok, detail) => { if (ok) { pass++; return; } fail++; if (fails.length < 60) fails.push(`${label}${detail ? " — " + detail : ""}`); };

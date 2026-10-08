@@ -13,6 +13,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api import router as api_router
 from app.api_device import router as device_api_router
+from app.api_device_extras import router as device_extras_router
+from app.api_gp150 import page_router as gp150_page_router
+from app.api_gp150 import router as gp150_api_router
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -55,4 +58,7 @@ def explorer_page() -> FileResponse:
 app.include_router(router)
 app.include_router(api_router)
 app.include_router(device_api_router)
+app.include_router(device_extras_router)
+app.include_router(gp150_api_router)
+app.include_router(gp150_page_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

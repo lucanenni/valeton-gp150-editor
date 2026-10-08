@@ -59,9 +59,13 @@ def _row_states(page) -> list[dict]:
 
 @pytest.mark.slow
 @pytest.mark.skip(
-    reason="CONV-1: the NAM A2->A1 form was removed from / (placeholder now points "
-    "at the future standalone NAM repo per CONV-2). Re-target this e2e at that repo "
-    "once it exists rather than deleting it outright."
+    reason="CONV-2 (2026-09-23): the NAM A2->A1 form was removed from / for good "
+    "(this fork is GP-150-focused, and GP-150 accepts NAM A2 captures directly) "
+    "— / now always links out to drewmerc302/nam-a2a1-converter instead. The "
+    "backend job pipeline this test exercises (app/api.py's /api/jobs) is still "
+    "there and still tested at the API level (test_api.py); if this real-training "
+    "e2e is ever wanted again, re-target it at /api/jobs directly rather than a "
+    "removed page, since there is no UI left to drive."
 )
 def test_convert_e2e_real_conversion(page, live_server, tmp_path):
     SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)

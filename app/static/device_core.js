@@ -117,6 +117,27 @@
     return r;
   }
 
+  // CAP-2: overwrite each of `slots` with the factory-default blank preset
+  // (confirm handled by the caller). Reloads on success or partial success.
+  async function resetPatches(slots) {
+    const r = await jpost("/reset", { patch_slots: slots, confirm: true });
+    if (r.reset && r.reset.length) await load();
+    return r;
+  }
+
+  // CAP-3: repoint each of `slots` at `targetSnaptoneSlot`, writing each back
+  // to its own slot (confirm handled by the caller). Reloads on success or
+  // partial success.
+  async function replaceSnaptone(slots, targetSnaptoneSlot) {
+    const r = await jpost("/replace-snaptone", {
+      patch_slots: slots,
+      target_ns_slot: targetSnaptoneSlot,
+      confirm: true,
+    });
+    if (r.written && r.written.length) await load();
+    return r;
+  }
+
   // ---- shared UI: toast + confirm modal + build modal -----------------------
   let uiRoot;
   function ensureUi() {
@@ -127,6 +148,12 @@
         <div class="modal-card build-card">
           <h2 id="dc-usage-title" class="build-title"></h2>
           <p id="dc-usage-sub" class="build-sub"></p>
+          <div id="dc-usage-bulk" class="dep-bulk-actions" hidden>
+            <button type="button" id="dc-usage-reset-all" class="modal-btn">Reset all</button>
+            <select id="dc-usage-replace-all">
+              <option value="">Replace all with…</option>
+            </select>
+          </div>
           <ul id="dc-usage-list" class="dep-list"></ul>
           <div class="modal-actions build-actions">
             <button type="button" id="dc-usage-close" class="modal-btn">Close</button>
@@ -196,30 +223,124 @@
     sel.appendChild(g2);
   }
 
+  // Report a resetPatches()/replaceSnaptone() result as a toast, honoring
+  // partial success (some slots done before the first failure) the same way
+  // the Preset Explorer's own bulk actions do.
+  function reportBulkResult(r, doneKey, verbPast) {
+    const done = r[doneKey] || [];
+    if (r.ok) {
+      toast(`${verbPast} ${done.length} preset${done.length === 1 ? "" : "s"}.`, "ok");
+    } else if (done.length) {
+      toast(r.error || `Stopped after ${done.length} preset(s).`, "err");
+    } else {
+      toast(r.error || "Failed.", "err");
+    }
+  }
+
+  function fillSnaptonePicker(sel, excludeSlot) {
+    sel.innerHTML = '<option value="">Replace with…</option>';
+    state.snaptones
+      .filter((s) => s.slot !== excludeSlot)
+      .forEach((s) => {
+        const o = document.createElement("option");
+        o.value = String(s.slot);
+        o.textContent = `#${s.slot} — ${s.name}`;
+        sel.appendChild(o);
+      });
+  }
+
   function openUsageModal(kind, slot) {
     ensureUi();
     const ov = document.getElementById("dc-usage");
     const list = document.getElementById("dc-usage-list");
     const buildBtn = document.getElementById("dc-usage-build");
     const closeBtn = document.getElementById("dc-usage-close");
+    const bulk = document.getElementById("dc-usage-bulk");
+    const resetAllBtn = document.getElementById("dc-usage-reset-all");
+    const replaceAllSel = document.getElementById("dc-usage-replace-all");
     const asset = (kind === "ir" ? state.userIrs.concat(state.factoryCabs) : state.snaptones)
       .find((x) => x.slot === slot);
     const name = asset ? (kind === "ir" ? irLabel(asset) : asset.name) : `#${slot}`;
     const patches = usagePatches(kind, slot);
+    const isSnaptone = kind === "snaptone";
     document.getElementById("dc-usage-title").textContent = name;
     document.getElementById("dc-usage-sub").textContent = patches.length
       ? `Used by ${patches.length} patch${patches.length === 1 ? "" : "es"}:`
       : "Not used by any patch — safe to overwrite or remove.";
     list.innerHTML = "";
+    const reopen = () => openUsageModal(kind, slot); // refresh in place after a write
     patches.forEach((p) => {
       const li = document.createElement("li");
       li.className = "dep-row";
       li.innerHTML = `<span class="dep-slot">#${p.slot}</span><span class="dep-name">${p.name}</span>`;
+      if (isSnaptone) {
+        // CAP-2a: reset this one patch to the factory blank
+        const resetBtn = document.createElement("button");
+        resetBtn.type = "button";
+        resetBtn.className = "dep-reset";
+        resetBtn.textContent = "Reset";
+        resetBtn.title = "Overwrite this preset with a blank patch";
+        resetBtn.addEventListener("click", async () => {
+          if (!(await confirmDialog(
+            `Reset preset #${p.slot} "${p.name}" to blank? This overwrites the slot on the pedal and can't be undone.`,
+            "Reset"))) return;
+          const r = await resetPatches([p.slot]);
+          reportBulkResult(r, "reset", "Reset");
+          reopen();
+        });
+        li.appendChild(resetBtn);
+        // CAP-3a: repoint this one patch at a different existing SnapTone
+        const replaceSel = document.createElement("select");
+        replaceSel.className = "dep-replace";
+        fillSnaptonePicker(replaceSel, slot);
+        replaceSel.addEventListener("change", async () => {
+          const target = Number(replaceSel.value);
+          if (!replaceSel.value) return;
+          const targetName = (state.snaptones.find((s) => s.slot === target) || {}).name || `#${target}`;
+          if (!(await confirmDialog(
+            `Replace the SnapTone on #${p.slot} "${p.name}" with "${targetName}"? This overwrites the slot on the pedal.`,
+            "Replace"))) { replaceSel.value = ""; return; }
+          const r = await replaceSnaptone([p.slot], target);
+          reportBulkResult(r, "written", "Updated");
+          reopen();
+        });
+        li.appendChild(replaceSel);
+      }
       list.appendChild(li);
     });
+    // CAP-2b/CAP-3b: bulk actions across every listed patch
+    bulk.hidden = !(isSnaptone && patches.length);
+    if (isSnaptone && patches.length) {
+      const slots = patches.map((p) => p.slot);
+      resetAllBtn.textContent = `Reset all (${slots.length})`;
+      resetAllBtn.onclick = async () => {
+        if (!(await confirmDialog(
+          `Reset all ${slots.length} preset${slots.length === 1 ? "" : "s"} using this SnapTone to blank? This overwrites each slot on the pedal and can't be undone.`,
+          "Reset all"))) return;
+        const r = await resetPatches(slots);
+        reportBulkResult(r, "reset", "Reset");
+        reopen();
+      };
+      fillSnaptonePicker(replaceAllSel, slot);
+      replaceAllSel.onchange = async () => {
+        const target = Number(replaceAllSel.value);
+        if (!replaceAllSel.value) return;
+        const targetName = (state.snaptones.find((s) => s.slot === target) || {}).name || `#${target}`;
+        if (!(await confirmDialog(
+          `Replace the SnapTone on all ${slots.length} listed preset${slots.length === 1 ? "" : "s"} with "${targetName}"? This overwrites each slot on the pedal.`,
+          "Replace all"))) { replaceAllSel.value = ""; return; }
+        const r = await replaceSnaptone(slots, target);
+        reportBulkResult(r, "written", "Updated");
+        reopen();
+      };
+    }
     buildBtn.hidden = kind !== "snaptone";
     ov.hidden = false;
-    const close = () => { ov.hidden = true; closeBtn.onclick = ov.onclick = buildBtn.onclick = null; };
+    const close = () => {
+      ov.hidden = true;
+      closeBtn.onclick = ov.onclick = buildBtn.onclick = null;
+      resetAllBtn.onclick = replaceAllSel.onchange = null;
+    };
     closeBtn.onclick = close;
     ov.onclick = (e) => { if (e.target === ov) close(); };
     buildBtn.onclick = () => { close(); openBuildModal({ snaptoneSlot: slot }); };
@@ -337,7 +458,7 @@
   window.DeviceCore = {
     state,
     load, usagePatches, usageCount, emptySlots, isEmpty, slotName, irLabel, isUserIr,
-    sync, createTemplate, deleteTemplate, buildWrite,
+    sync, createTemplate, deleteTemplate, buildWrite, resetPatches, replaceSnaptone,
     openBuildModal, openUsageModal, confirmDialog, toast,
     on: (evt, cb) => { (listeners[evt] = listeners[evt] || []).push(cb); },
   };

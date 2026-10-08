@@ -32,6 +32,17 @@ for (const f of ["fxid_ring.json", "fxid_ring_gp5.json"]) {
   if (existsSync(src)) copyFileSync(src, resolve(outDir, f));
   else console.warn(`(skip missing ${f})`);
 }
+
+// GP-50/GP-5 -> GP-150 converter data (app/static/convert_gp50_to_gp150.js):
+// the target-device catalog and the model crosswalk (the output skeleton,
+// gp150_skeleton.prst, is tracked alongside — see
+// patch/convert_gp50_to_gp150.py's DEFAULT_SKELETON_PATH).
+for (const f of ["fxid_ring_gp150.json", "gp50_to_gp150_model_map.json"]) {
+  const src = resolve(repo, "patch", f);
+  if (existsSync(src)) copyFileSync(src, resolve(outDir, f));
+  else console.warn(`(skip missing ${f})`);
+}
+// app/static/data/gp150_skeleton.prst is tracked in the repo (a factory-empty GP-150 patch), nothing to copy.
 const bankSrc = resolve(repo, "patch", "bank_map.json");
 if (LIVE && existsSync(bankSrc)) copyFileSync(bankSrc, resolve(outDir, "bank_map.json"));
 else writeFileSync(resolve(outDir, "bank_map.json"), JSON.stringify({ source: "factory (no custom names)", snaptone: {}, ir: {} }));

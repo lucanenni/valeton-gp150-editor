@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Valeton Companion — Convert</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/gp150.css" />
 </head>
 <body>
   <header>
@@ -33,49 +34,13 @@
         <h2>NAM Capture &nbsp;<span class="section-tag">A2 → A1</span></h2>
         <p class="section-desc">Drop NAM <code>.nam</code> A2 captures; each is distilled to a GP-50-ready A1 <code>.nam</code>.</p>
       </div>
-      <section class="card" id="nam-converter">
-        <h3>1. A2 captures</h3>
-        <div id="drop-zone" class="drop-zone" tabindex="0">
-          <p>Drag &amp; drop <code>.nam</code> A2 captures here, or</p>
-          <button type="button" id="file-picker-btn">Choose files&hellip;</button>
-          <input type="file" id="file-input" accept=".nam" multiple hidden />
-        </div>
-        <ul id="file-list" class="file-list convert-list"></ul>
-
-        <div class="epochs-field" style="margin-top:0.85rem;">
-          <label for="epochs">Training epochs</label>
-          <div class="epochs-row" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-            <div id="epoch-presets" class="epoch-presets" style="display:flex; gap:0.35rem;">
-              <button type="button" class="epoch-preset" data-epochs="20">Draft</button>
-              <button type="button" class="epoch-preset" data-epochs="60">Standard</button>
-              <button type="button" class="epoch-preset" data-epochs="120">Best</button>
-            </div>
-            <input id="epochs" type="number" min="1" max="1000" value="60" style="width:6rem;" />
-          </div>
-          <ul class="epoch-guide">
-            <li><b>Draft (20)</b> — quick preview. Rough, artifacts likely; use only to sanity-check a file.</li>
-            <li><b>Standard (60)</b> — the sweet spot. Faithful tone at a sane runtime. <b>Default.</b></li>
-            <li><b>Best (120)</b> — chasing the last few %. Diminishing returns and noticeably longer.</li>
-          </ul>
-          <p class="epoch-note">Each epoch takes about the same time; more epochs = longer convert but tighter tone. The live progress bar shows an estimate once training starts.</p>
-        </div>
-
-        <div style="display:flex; gap:0.5rem; margin-top:0.85rem; align-items:center;">
-          <button type="button" id="convert-btn" class="primary" disabled>Convert A2 → A1</button>
-          <button type="button" id="cancel-btn" hidden>Cancel</button>
-        </div>
-        <div id="error-banner" class="error-banner" role="alert" hidden></div>
-        <section id="results-section" hidden style="margin-top:1rem;">
-          <h3>Results</h3>
-          <ul id="results" class="file-list"></ul>
-        </section>
-      </section>
-
-      <!-- Shown only on the static (no-backend) build: point at the downloadable
-           desktop tool instead of the live converter. -->
-      <section class="card" id="nam-download" hidden>
+      <!-- CONV-2 (2026-09-23): this fork is focused on GP-150 support, which
+           accepts NAM A2 captures directly (no A1 distillation needed), so
+           the in-browser A2->A1 trainer isn't relevant here — always point
+           at the standalone tool instead, on every build. -->
+      <section class="card" id="nam-download">
         <p class="subtitle">Distilling A2 → A1 runs a local training step, so it lives in a
-          standalone desktop app rather than this in-browser site.</p>
+          standalone desktop app rather than this site.</p>
         <p style="margin-top:0.75rem;">
           <a class="download-link" href="https://github.com/drewmerc302/nam-a2a1-converter/releases"
              target="_blank" rel="noopener">Download the A2 → A1 converter (Windows / macOS) →</a>
@@ -127,6 +92,36 @@
         <div id="prst-error" class="error-banner" role="alert" hidden></div>
       </section>
     </div>
+
+    <div class="section-divider" role="separator"></div>
+
+    <!-- ============ Preset: GP-50/GP-5 -> GP-150 ============ -->
+    <div class="convert-section">
+      <div class="section-head">
+        <h2>Preset &nbsp;<span class="section-tag">GP-50/GP-5 → GP-150</span> <span class="badge warn">best-effort</span></h2>
+        <p class="section-desc">
+          Unlike GP-5⟷GP-50 (an identical effect catalog, just a container
+          reshape), GP-50 and GP-150 have different, only partly-overlapping
+          model libraries — this remaps every model to its closest GP-150
+          equivalent (112 of 112 real GP-50 models have one; SnapTone
+          content never carries across, it's user-captured audio, not a
+          catalog model). Produces a <code>.prst</code> file for you to
+          import into Valeton Suite — Suite pushes it to the pedal from
+          there, same as any of its own presets.
+        </p>
+      </div>
+
+      <section class="card">
+        <h3>1. Presets</h3>
+        <div id="gp150-convert-drop" class="drop-zone" tabindex="0">
+          <p>Drag &amp; drop a GP-50 or GP-5 <code>.prst</code> here, or</p>
+          <button type="button" id="gp150-convert-pick-btn">Choose files&hellip;</button>
+          <input type="file" id="gp150-convert-input" accept=".prst" multiple hidden />
+        </div>
+        <ul id="gp150-convert-list" class="gp150-name-list"></ul>
+        <div id="gp150-convert-error" class="error-banner" role="alert" hidden></div>
+      </section>
+    </div>
   </main>
 
   <script src="/static/theme.js"></script>
@@ -135,6 +130,8 @@
   <script src="/static/ui_core.js"></script>
   <script src="/static/prst.js"></script>
   <script src="/static/convert_prst.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/gp150_format.js"></script>
+  <script src="/static/convert_gp50_to_gp150.js"></script>
+  <script src="/static/gp150_converter_ui.js"></script>
 </body>
 </html>

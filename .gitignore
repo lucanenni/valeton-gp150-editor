@@ -18,6 +18,7 @@ __pycache__/
 block_library.json
 templates.json
 device_scan/
+device_scan_gp150/
 presetExports/
 
 # large binary DI (download separately; see a2a1/README.md)
@@ -49,3 +50,10 @@ dist/
 # graphify knowledge-graph output (regenerable, rebuilt on branch switch)
 graphify-out/
 .ruff_cache/
+gp150_scan_cache/
+
+mcp/node_modules/
+
+# Third-party content kept out of the repo (real Suite upload captures); see app/tests/gp150_corpus.py
+re/gp150_captures/**/raw_midi_out_capture.txt
+re/gp150_captures/snaptone_upload_2026-09-29/*.raw

@@ -15,7 +15,7 @@ import time
 import mido
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from patch.prst_format import GP5, GP50, crc8  # noqa: E402 — shared CRC-8/0x07
+from patch.prst_format import GP5, GP50, GP150, crc8  # noqa: E402 — shared CRC-8/0x07
 
 PORT = "GP-50"  # fallback name; find_port() resolves the actual connected device
 READ_CMD = 0x01
@@ -25,11 +25,23 @@ CATSEL = 0x12  # constant data[0] in Suite's name-read requests
 def find_port_optional():
     """(port_name, DeviceProfile) for a physically connected Valeton device, or
     (None, None) if none is present. Checks GP-50 first so its name isn't shadowed
-    by the "GP-5" substring."""
+    by the "GP-5" substring; GP-150 checked first of all ("GP-150" itself never
+    collides with "GP-50"/"GP-5" — checked: neither is a substring of the other).
+
+    GP-150 detection here is connection-presence ONLY (MIDI port enumeration,
+    confirmed live — design/GP150_SUPPORT.md §3.2) — it does NOT mean
+    the GP-5/GP-50 read protocol below (selectors 0x40/0x41, this module's
+    read_bank/scan) works on it. It doesn't (re/DEVICE_GP150.md); GP-150 needs
+    a different flow entirely (patch/gp150_live_read.py). find_port() below
+    deliberately does NOT return GP150 for exactly this reason — only this
+    "optional" resolver does, for status reporting."""
     try:
         names = mido.get_input_names()
     except Exception:  # noqa: BLE001 — no backend/ports available
         return None, None
+    for name in names:
+        if "GP-150" in name:
+            return name, GP150
     for name in names:
         if "GP-50" in name:
             return name, GP50
@@ -43,9 +55,27 @@ def find_port():
     """Resolve the connected Valeton MIDI port -> (port_name, DeviceProfile).
     The read protocol (selectors 0x40/0x41, CRC-8/0x07, nibble framing) is shared
     by the GP-5 and GP-50, so a scan/sync works on either once the right port is
-    opened. Falls back to (PORT, GP50) when no device is found (legacy default)."""
-    name, prof = find_port_optional()
-    return (name, prof) if name else (PORT, GP50)
+    opened. Falls back to (PORT, GP50) when no GP-5/GP-50 is found.
+
+    Deliberately does NOT delegate to find_port_optional() and return whatever
+    it found: that resolver checks GP-150/180 first (for status-reporting
+    purposes — see its docstring), and a GP-150 doesn't speak this protocol
+    (re/DEVICE_GP150.md) — pointing this function's 0x40/0x41 requests at one
+    would be a confusing always-empty read instead of a clear "wrong device"
+    signal. Scans directly for GP-50/GP-5 instead, so a GP-150 sitting earlier
+    in the port list (e.g. both connected at once) can't shadow a real GP-50.
+    Use gp150_live_read.py for GP-150."""
+    try:
+        names = mido.get_input_names()
+    except Exception:  # noqa: BLE001 — no backend/ports available
+        return PORT, GP50
+    for name in names:
+        if "GP-50" in name:
+            return name, GP50
+    for name in names:
+        if "GP-5" in name:
+            return name, GP5
+    return PORT, GP50
 
 
 def build_request(selector):

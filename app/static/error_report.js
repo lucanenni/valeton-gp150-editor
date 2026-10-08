@@ -3,12 +3,12 @@
  * error_report.js — surface uncaught errors so a hosted beta isn't a black box.
  *
  * On a window error / unhandled rejection, show one small dismissible toast with a
- * "Report" button that opens a prefilled email (error, stack, URL, browser, time).
+ * "Report" button that opens a prefilled GitHub issue (error, stack, URL, browser, time).
  * Opt-in: nothing is sent unless the tester clicks Report. No network, no logging
- * service — just a mailto. Set REPORT_EMAIL to where beta feedback should go.
+ * service. Set REPORT_ISSUES_URL to where feedback should go.
  */
 (function () {
-  const REPORT_EMAIL = "drewmerc@gmail.com"; // beta bug reports land here
+  const REPORT_ISSUES_URL = "https://github.com/lucanenni/valeton-gp150-editor/issues/new"; // bug reports land here
   let active = false; // one toast at a time
 
   const CSS = `
@@ -56,8 +56,8 @@
         "What I was doing when this happened:\n\n\n" +
         "---- technical details (please keep) ----\n" +
         `${msg}\n${stack}\n\nPage: ${location.href}\nBrowser: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`;
-      const href = `mailto:${REPORT_EMAIL}?subject=${encodeURIComponent("Valeton beta bug: " + msg.slice(0, 80))}&body=${encodeURIComponent(body)}`;
-      window.location.href = href;
+      const href = `${REPORT_ISSUES_URL}?title=${encodeURIComponent("Bug: " + msg.slice(0, 80))}&body=${encodeURIComponent(body)}`;
+      window.open(href, "_blank", "noopener");
       close();
     });
     setTimeout(() => { if (document.getElementById("err-report") === el) close(); }, 15000);

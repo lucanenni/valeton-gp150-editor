@@ -162,6 +162,8 @@
     if (path === "/api/device/write") return handleWrite(body);
     if (path === "/api/device/swap") return handleSwap(body);
     if (path === "/api/device/edit") return handleEdit(body);
+    if (path === "/api/device/reset") return handleReset(body);
+    if (path === "/api/device/replace-snaptone") return handleReplaceSnaptone(body);
 
     if (path === "/api/device/templates" && method === "GET") {
       return J({ templates: lsGet(LS_TPL, []).map(publicTpl) });
@@ -271,6 +273,66 @@
       persistSlot(a); persistSlot(z);
       return J({ ok: true });
     } catch (e) { return J({ ok: false, error: e.message }); }
+  }
+
+  // CAP-2/CAP-3 (PLAT-2 port, 2026-09-18): overwrite each of `patch_slots`
+  // with the factory blank / repoint each at a different SnapTone. Mirrors
+  // app/api_device.py's /reset and /replace-snaptone exactly — same upfront
+  // validation (confirm required, every slot must already be known), same
+  // stop-on-first-failure loop, same response shape — just backed by real
+  // WebMIDI (Bridge.writeSlot) and the bundled snapshot (store.bytes)
+  // instead of device_io.write_patch/presetExports.
+  async function handleReset(body) {
+    if (!body.confirm) return J({ detail: "refusing to reset: confirm=true required" }, 400);
+    const slots = body.patch_slots || [];
+    if (!slots.length) return J({ detail: "no patch slots given" }, 400);
+    const missing = slots.filter((s) => !store.bytes.has(s));
+    if (missing.length) return J({ detail: `unknown patch slot(s): ${JSON.stringify(missing)}` }, 404);
+    if (!(await ensureConnected())) return J({ ok: false, error: "no device connected" });
+    const blank = PRST.blankPrst(store.profile.key);
+    const done = [];
+    for (const slot of slots) {
+      try {
+        await Bridge.writeSlot(slot, blank);
+        store.bytes.set(slot, blank); store.names.set(slot, PRST.readName(blank));
+        persistSlot(slot);
+        done.push(slot);
+      } catch (e) {
+        invalidate();
+        return J({ ok: false, reset: done, error: `stopped after ${done.length}/${slots.length} — slot ${slot} failed: ${e.message}` });
+      }
+    }
+    invalidate();
+    return J({ ok: true, reset: done });
+  }
+
+  async function handleReplaceSnaptone(body) {
+    if (!body.confirm) return J({ detail: "refusing to write: confirm=true required" }, 400);
+    const slots = body.patch_slots || [];
+    if (!slots.length) return J({ detail: "no patch slots given" }, 400);
+    const missing = slots.filter((s) => !store.bytes.has(s));
+    if (missing.length) return J({ detail: `unknown patch slot(s): ${JSON.stringify(missing)}` }, 404);
+    if (!(await ensureConnected())) return J({ ok: false, error: "no device connected" });
+    const done = [];
+    for (const slot of slots) {
+      let data;
+      try {
+        data = repointSnaptone(store.bytes.get(slot), body.target_ns_slot, null);
+      } catch (e) {
+        return J({ ok: false, written: done, error: `stopped after ${done.length}/${slots.length} — slot ${slot}: ${e.message}` });
+      }
+      try {
+        await Bridge.writeSlot(slot, data);
+        store.bytes.set(slot, data); store.names.set(slot, PRST.readName(data));
+        persistSlot(slot);
+        done.push(slot);
+      } catch (e) {
+        invalidate();
+        return J({ ok: false, written: done, error: `stopped after ${done.length}/${slots.length} — slot ${slot} failed: ${e.message}` });
+      }
+    }
+    invalidate();
+    return J({ ok: true, written: done });
   }
 
   function handleEdit(body) {

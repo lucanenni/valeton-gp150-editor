@@ -1,11 +1,25 @@
-# Valeton GP-50 Editor
+# Valeton GP-50 Editor — GP-150 fork
+
+A fork of [drewmerc302/valeton-gp50](https://github.com/drewmerc302/valeton-gp50) (all credit
+for the original GP-5/GP-50 work belongs there) that adds **Valeton GP-150** support — see
+[GP-150 support](#gp-150-support-this-fork) below. Everything before that section describes the
+upstream GP-5/GP-50 editor, unchanged by this fork except where noted.
+
+This is an independent community project. It is not affiliated with, endorsed or sponsored by
+Valeton or Sonicake; "Valeton", "GP-5", "GP-50", "GP-150" and "Valeton Suite" are names and
+trademarks of their respective owners, used here only to say which hardware and software the
+project works with. It contains no Valeton software, firmware or factory content.
 
 A browser-based editor for the **Valeton GP-50** (and GP-5), built by reverse-engineering
 the pedal's MIDI SysEx protocol from scratch. It reads and writes the device live over
 **WebMIDI** — no vendor SDK, no drivers, no backend.
 
-**Live demo:** [valeton-gp50-woad.vercel.app](https://valeton-gp50-woad.vercel.app) —
-zero-setup, runs entirely in-browser. Chrome or Edge, pedal on USB.
+**Live demo (this fork, GP-150 included, beta):**
+[lucanenni.github.io/valeton-gp150-editor](https://lucanenni.github.io/valeton-gp150-editor/) —
+zero-setup, runs entirely in-browser, Chrome or Edge, pedal on USB. The **upstream** project's own
+hosted build (GP-5/GP-50 only) is [valeton-gp50-woad.vercel.app](https://valeton-gp50-woad.vercel.app).
+This is a beta: GP-150 writes go out only after their exact bytes were reproduced from real captures,
+but read first and keep a backup of your presets before writing.
 
 **What it does:**
 
@@ -51,6 +65,37 @@ If you open an issue about talking to the pedal, please include:
   [MIDI Monitor](https://www.snoize.com/midimonitor/) on macOS. This is the single most
   useful thing you can attach.
 
+## GP-150 support (this fork)
+
+Works over WebMIDI in Chrome/Edge with the pedal on USB (no Valeton Suite needed), or offline on
+`.prst` files. The GP-150 uses a different `.prst` container and wire protocol than the GP-5/GP-50;
+what is known is written up in [`design/GP150_SUPPORT.md`](design/GP150_SUPPORT.md)
+(container spec: [`re/DEVICE_GP150.md`](re/DEVICE_GP150.md); tickets: [`BACKLOG_GP150.md`](BACKLOG_GP150.md)).
+
+- **Explorer** (GP-150 connected, or a `.prst` dropped in): read any of the 200 patches live, see the
+  full signal chain and every module's model, parameters and on/off state, live-edit parameters, swap
+  models, switch modules on/off, reorder the chain, save, and write a whole patch to any slot without
+  activating it.
+  Patch-level settings (volume, tempo, NAM mode, Quick Knobs, EXP/CTRL, footswitches) are shown too.
+- **Preset converter:** GP-50/GP-5 → GP-150 (`app/static/convert_gp50_to_gp150.js`), fully client-side.
+- **Captures & IRs:** list the pedal's SnapTones, NAM models and User IRs, and upload:
+  User IR (`.wav`), NAM ("A2 Lite" `.nam`), a ready-made SnapTone (`.clo`), or **create a SnapTone**
+  from a `.nam` file or from a recording of your amp — one button builds it (a Valeton-compatible amp
+  profiler running in the browser, `app/static/amp_profiler*.js`) and uploads it to the slot you choose.
+  Uploads to a SnapTone slot change every patch that points at it, so the slot is always your call.
+  Every SnapTone / NAM / User IR card also shows which patches use it ("used by"): the 200 presets are
+  read in the background after connecting (about 40 s the first time, then only what changed).
+- **MCP server** ([`mcp/`](mcp/README.md)): lets Claude Code (or any MCP client) search the effect
+  catalog, read any preset from the pedal without touching the front panel, build or edit a patch by
+  model and parameter names and write it to a scratch slot (default 190–199), list the pedal's libraries,
+  see which presets use a SnapTone, and upload IRs, NAM models and SnapTones — including SnapTones built
+  from a `.nam` file or a recording (only into never-written slots unless you allow more). Setup:
+  `claude mcp add gp150 -- node /absolute/path/to/mcp/server.mjs` (macOS, Node, `.venv-midi`).
+
+The Python scripts under `patch/gp150_*.py` are the command-line counterparts of the live paths
+(`gp150_live_read.py`, `gp150_wake_select_read.py`, …) and the byte-exact builders the browser code
+was checked against.
+
 ## Getting NAM captures onto the pedal
 
 **That moved to its own project:
@@ -77,13 +122,14 @@ but the converter you actually want is the standalone one.
 
 ## Setup
 
-You don't need any of this to use the app — open the
-[live demo](https://valeton-gp50-woad.vercel.app). Local setup is for development.
+For GP-5/GP-50 use, you don't need any of this — open the upstream
+[live demo](https://valeton-gp50-woad.vercel.app). Local setup below is for
+development; it's also what you'd run to build this fork's own static bundle
+(`scripts/build_static_site.mjs` — no hosted build of this fork exists yet, see
+`DEPLOY.md`), which includes the GP-150 pages too.
 
 ```bash
-cd /Users/drewmerc/workspace/valeton
-
-# web app venv
+# from this repo's root
 python3 -m venv .venv-app && ./.venv-app/bin/python -m pip install fastapi "uvicorn[standard]" python-multipart pytest httpx
 ```
 
@@ -120,6 +166,9 @@ Then open **http://127.0.0.1:8756**.
 - **Preset Converter:** drop in a `.prst` and convert between GP-5 and GP-50 formats.
 - **NAM converter:** present in the local build only, and only with the engine venv
   above. The hosted build links to the standalone converter instead.
+- **GP-150 (this fork only):** inspect a GP-150 `.prst`, read one live off the pedal, or convert
+  a GP-50/GP-5 preset to GP-150 — see
+  [GP-150 support](#gp-150-support-this-fork) below.
 
 ## Tests
 
@@ -127,6 +176,13 @@ Then open **http://127.0.0.1:8756**.
 ./.venv-app/bin/python -m pytest app/tests -q -m "not slow"   # fast unit/API/frontend suite
 ./.venv-app/bin/python -m pytest app/tests/test_e2e.py -q -s  # slow: real headless browser conversion + screenshots
 ```
+
+The GP-150 decoder tests run on a stand-in set (the factory-empty patch, converted upstream presets and
+synthetic patches). To run them against a real corpus of exported GP-150 patches, put the `.prst` files in a
+folder `X/prst_export/` and set `GP150_CORPUS_DIR=X`. The upload tests (User IR, NAM, SnapTone) check
+golden fixtures built from synthetic payloads; the real Suite upload captures they were derived from hold
+third-party content and are not in the repo — set `GP150_CAPTURES_DIR` to a folder with them to re-run the
+byte-for-byte parity checks. The MCP server has its own tests in `mcp/` (`npm test`, no pedal needed).
 
 ## Layout
 
@@ -137,7 +193,11 @@ Then open **http://127.0.0.1:8756**.
 - `docs/`, `re/`, `design/` — protocol notes, RE captures, and format research.
 - `refs/` — sample models + the DI input.
 - `MVP_REQUIREMENTS.md`, `AUTONOMY.md`, `STATUS.md` — the MVP spec, the build-loop
-  protocol, and live build status.
+  protocol, and live build status (all from upstream; not kept current by this fork).
+- **This fork's GP-150 work**: `patch/gp150_*.py` (decoder, wire protocol, upload builders),
+  `app/static/gp150*.js`, `webmidi_gp150.js` and `amp_profiler*.js` (the GP-150 pages, live MIDI and the
+  amp profiler), `re/gp150_captures/` (real device captures the tests replay byte-for-byte),
+  `re/DEVICE_GP150.md`, `design/GP150_SUPPORT.md`, `BACKLOG_GP150.md`.
 
 ## License
 
@@ -146,6 +206,9 @@ Then open **http://127.0.0.1:8756**.
 ## Scope
 
 Live device read/write (Explorer, live edit, reorder, rename, clear, capture usage,
-build/make-template) is reverse-engineered and working over WebMIDI. The app only
-talks to the physical pedal when you explicitly connect and scan/write via the
-Explorer or Captures & IRs pages.
+build/make-template) is reverse-engineered and working over WebMIDI for GP-5/GP-50.
+The app only talks to the physical pedal when you explicitly connect and scan/write
+via the Explorer or Captures & IRs pages.
+
+**GP-150 (this fork):** writes go out only after the exact bytes have been reproduced from a real
+capture and confirmed on the pedal (see `design/GP150_SUPPORT.md` §6 for the safety rules).

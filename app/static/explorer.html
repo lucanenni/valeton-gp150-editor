@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GP-50 Preset Explorer</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/gp150.css" />
 </head>
 <body>
   <header>
@@ -35,6 +36,8 @@
         <span id="device-status-text" class="device-status-text"></span>
         <div class="nav-spacer"></div>
         <button type="button" id="device-conn" class="device-conn" title="Click to re-check the device connection">○ Checking…</button>
+        <button type="button" id="restore-backup-btn" class="scan-btn" title="Restore a bank backup JSON (from the reorder modal's Bank Backup button) to the pedal">⬆ Restore backup</button>
+        <input type="file" id="restore-backup-input" accept=".json" hidden />
         <button type="button" id="scan-btn" class="scan-btn">⟳ Rescan device</button>
       </div>
       <!-- shown when nothing is loaded yet (first run) -->
@@ -57,6 +60,18 @@
         <input type="search" id="preset-search" placeholder="Search presets, models, types&hellip;" class="lib-search" />
         <span id="result-count" class="subtitle"></span>
       </div>
+      <div id="bulk-bar" class="bulk-bar">
+        <label class="bulk-select-all">
+          <input type="checkbox" id="select-all-toggle" />
+          <span id="bulk-count">Select all</span>
+        </label>
+        <div class="bulk-actions">
+          <button type="button" id="bulk-reset-btn" disabled>Reset selected</button>
+          <button type="button" id="bulk-export-zip-btn" disabled>Export selected (.zip)</button>
+          <button type="button" id="bulk-export-folder-btn" disabled hidden>Export selected to folder&hellip;</button>
+          <span id="bulk-status" class="subtitle"></span>
+        </div>
+      </div>
       <div class="filter-row">
         <div id="filter-bar" class="filter-bar"></div>
         <label class="official-toggle" title="Show the real gear a model is based on (Green OD → Ibanez TS808) where known">
@@ -76,7 +91,166 @@
       <ul id="preset-list" class="preset-list"></ul>
       <p id="preset-empty" class="subtitle" hidden>No presets match these filters.</p>
     </section>
+
+    <!-- ============================================================
+         GP-150 support (GP150-8, 2026-09-20). Deliberately self-contained
+         and appended here rather than woven into the GP-5/GP-50 code above:
+         GP-150's container has no model_records/bypass_mask (a completely
+         different format, see BACKLOG_GP150.md's GP150-8 entry), so it can't go
+         through PatchLib/the preset inventory above, and it keeps this
+         block a clean, isolated diff against upstream (drewmerc302/
+         valeton-gp50) rather than touching that project's own GP-5/GP-50
+         code paths.
+         All the logic lives in gp150.js/gp150_format.js/webmidi_gp150.js;
+         this page just mounts it instead of the file uploads to /gp150. -->
+    <section class="card">
+      <div class="dc-section-head">
+        <h2>GP-150 <span class="badge ok">confirmed working</span></h2>
+      </div>
+      <p class="subtitle">
+        Upload a GP-150 <code>.prst</code> file, or read one live off the
+        pedal over WebMIDI, to see its patch name, signal chain, and every
+        module's real model, parameters, and on/off state. A live read also
+        shows controls for editing parameter values, toggling modules
+        on/off, swapping a module's model, drag-reordering the chain, and
+        saving the result to a slot — all confirmed working on real
+        hardware (2026-09-20). GP-150's container has no model records or
+        bypass mask (a different format from GP-5/GP-50), so it can't go
+        through the inventory above and gets its own view here instead —
+        see <a href="https://github.com/lucanenni/valeton-gp150-editor/blob/master/design/GP150_SUPPORT.md"
+        target="_blank" rel="noopener">design/GP150_SUPPORT.md</a> for exactly what's confirmed and where.
+      </p>
+      <div id="gp150-drop" class="drop-zone" tabindex="0">
+        <p>Drag &amp; drop a GP-150 <code>.prst</code> here, or</p>
+        <button type="button" id="gp150-pick-btn">Choose files&hellip;</button>
+        <input type="file" id="gp150-input" accept=".prst" multiple hidden />
+      </div>
+      <div id="gp150-error" class="error-banner" role="alert" hidden></div>
+      <div class="gp150-live-row">
+        <button type="button" id="gp150-connect-btn">Connect to GP-150</button>
+        <span id="gp150-live-status" class="subtitle"></span>
+      </div>
+      <div class="gp150-live-row" id="gp150-live-controls" hidden>
+        <label for="gp150-slot-input">Slot</label>
+        <input type="number" id="gp150-slot-input" min="1" max="200" value="1" />
+        <label for="gp150-settle-input" title="Delay after selecting the slot, before sending the wake/fetch request (GP150-11: tune this live if reads are flaky)">Settle (ms)</label>
+        <input type="number" id="gp150-settle-input" min="0" max="5000" step="50" value="300" />
+        <button type="button" id="gp150-read-btn" title="Selects the slot via Suite's own SysEx mechanism (no CC0/PC) then reads it back -- WARNING: this loads that preset live on the pedal, exactly like changing patches in Suite itself; unsaved edits on the pedal are lost">Read slot</button>
+      </div>
+      <div id="gp150-live-error" class="error-banner" role="alert" hidden></div>
+      <div class="gp150-live-row">
+        <button type="button" id="gp150-list-names-btn">List all names</button>
+        <span id="gp150-list-names-status" class="subtitle"></span>
+      </div>
+      <div id="gp150-list-names-error" class="error-banner" role="alert" hidden></div>
+      <ul id="gp150-name-list" class="gp150-name-list"></ul>
+      <section id="gp150-results"></section>
+    </section>
+
+    <!-- EXP-9 (2026-09-23): block presets. Self-contained, separate from
+         gp150.js -- see gp150_block_library.js's own file for the full
+         rationale -- only listens for a "gp150:patch-rendered" event, never
+         edits gp150.js's DOM or write path. GP-5/GP-50 have no equivalent
+         here yet; they'd go through PatchLib's own block records instead
+         (a separate, not-yet-built feature, see BACKLOG_GP150.md's EXP-9 entry). -->
+    <section class="card" id="gp150-block-library">
+      <div class="dc-section-head">
+        <h2>GP-150 Block Library</h2>
+      </div>
+      <p class="subtitle">
+        Click "💾 Save block" on any module above (uploaded file or live
+        read) to save its model, parameters, and on/off state here,
+        independent of the preset it came from — then apply it to a
+        different preset's same module later, or export/import it as a
+        file. "Apply to pedal" needs a live connection (above); saving and
+        exporting don't.
+      </p>
+      <div class="gp150-live-row">
+        <button type="button" id="gp150-block-export-all-btn">Export all</button>
+        <button type="button" id="gp150-block-import-btn">Import…</button>
+        <input type="file" id="gp150-block-import-input" accept=".json" hidden />
+      </div>
+      <div id="gp150-block-error" class="error-banner" role="alert" hidden></div>
+      <ul id="gp150-block-list" class="gp150-name-list"></ul>
+      <p id="gp150-block-empty" class="subtitle">No saved blocks yet.</p>
+    </section>
   </main>
+
+  <template id="gp150-patch-template">
+    <section class="card gp150-patch">
+      <div class="gp150-patch-head">
+        <h2 class="gp150-patch-name"></h2>
+        <span class="subtitle gp150-patch-slot"></span>
+      </div>
+      <div class="gp150-tabs">
+        <button type="button" class="gp150-tab-btn active" data-tab="chain">Effects Chain</button>
+        <button type="button" class="gp150-tab-btn" data-tab="settings">Patch Settings</button>
+      </div>
+      <div class="gp150-tab-panel" data-tab="chain">
+        <div class="gp150-chain"></div>
+        <div class="gp150-reorder" hidden>
+          <p class="subtitle">
+            Drag to reorder the chain, then try sending it to the pedal —
+            confirmed working live (2026-09-20, see
+            <a href="https://github.com/lucanenni/valeton-gp150-editor/blob/master/design/GP150_SUPPORT.md"
+               target="_blank" rel="noopener">design/GP150_SUPPORT.md</a>). Check the pedal's own display after sending.
+          </p>
+          <ul class="gp150-reorder-list"></ul>
+          <div class="gp150-live-row">
+            <button type="button" class="gp150-send-reorder-btn">Send reorder to pedal</button>
+            <span class="gp150-reorder-status subtitle"></span>
+          </div>
+          <div class="gp150-reorder-error error-banner" role="alert" hidden></div>
+        </div>
+        <div class="gp150-modules"></div>
+      </div>
+      <div class="gp150-tab-panel" data-tab="settings" hidden>
+        <div class="gp150-patch-settings"></div>
+      </div>
+      <div class="gp150-save" hidden>
+        <p class="subtitle">
+          Save/commit the pedal's current live state (whatever parameter
+          edits, model swaps, or reorders you've sent above) to a slot —
+          confirmed working live (2026-09-20, see
+          <a href="https://github.com/lucanenni/valeton-gp150-editor/blob/master/design/GP150_SUPPORT.md"
+             target="_blank" rel="noopener">design/GP150_SUPPORT.md</a>). Without this, live edits revert on patch
+          reselect or power-cycle.
+        </p>
+        <div class="gp150-live-row">
+          <label for="gp150-save-slot">Slot</label>
+          <input type="number" class="gp150-save-slot" min="1" max="200" />
+          <label for="gp150-save-name">Name</label>
+          <input type="text" class="gp150-save-name" maxlength="16" />
+          <button type="button" class="gp150-save-btn">Save to pedal</button>
+          <span class="gp150-save-status subtitle"></span>
+        </div>
+        <div class="gp150-save-error error-banner" role="alert" hidden></div>
+      </div>
+      <div class="gp150-write-preset" hidden>
+        <p class="subtitle">
+          Write this EXACT patch, unchanged, directly to any GP-150 slot —
+          non-disruptive, does not select/activate anything or touch the
+          pedal's active preset or front panel (GP150-13, live-confirmed
+          2026-09-27, see
+          <a href="https://github.com/lucanenni/valeton-gp150-editor/blob/master/design/GP150_SUPPORT.md"
+             target="_blank" rel="noopener">design/GP150_SUPPORT.md</a>). Only works for a file that's already a valid
+          GP-150 .prst (its own internal checksum intact — a real capture
+          or export, not a hand-edited one). Automatically re-reads the
+          target slot's name after writing (the same non-disruptive
+          request GP150-12's name list uses) to confirm it actually took —
+          if it doesn't match, you'll see a warning instead of a silent
+          false "success."
+        </p>
+        <div class="gp150-live-row">
+          <label for="gp150-write-preset-slot">Slot</label>
+          <input type="number" class="gp150-write-preset-slot" min="1" max="200" />
+          <button type="button" class="gp150-write-preset-btn">Write to pedal</button>
+          <span class="gp150-write-preset-status subtitle"></span>
+        </div>
+        <div class="gp150-write-preset-error error-banner" role="alert" hidden></div>
+      </div>
+    </section>
+  </template>
 
   <script src="/static/theme.js"></script>
   <script src="/static/error_report.js"></script>
@@ -88,6 +262,11 @@
   <script src="/static/webmidi_write.js"></script>
   <script src="/static/device_bridge.js"></script>
   <script src="/static/static_api.js"></script>
+  <script src="/static/gp150_format.js"></script>
+  <script src="/static/webmidi_gp150.js"></script>
+  <script src="/static/gp150_usage.js"></script>
+  <script src="/static/gp150.js"></script>
+  <script src="/static/gp150_block_library.js"></script>
   <script src="/static/explorer.js"></script>
 </body>
 </html>

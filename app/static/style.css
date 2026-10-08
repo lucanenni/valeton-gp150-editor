@@ -639,6 +639,19 @@ button:disabled {
 /* --- Preset Explorer --- */
 .explorer-main { max-width: min(1500px, 96vw); }
 
+/* EXP-5: multi-select + bulk actions, sits above the filter row (top-right) */
+.bulk-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; margin-bottom: 0.6rem;
+}
+.bulk-select-all {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.85rem; color: var(--muted); cursor: pointer;
+}
+.bulk-actions { display: flex; align-items: center; gap: 0.6rem; margin-left: auto; }
+.bulk-actions button:disabled { opacity: 0.4; cursor: default; }
+#bulk-status { white-space: nowrap; }
+
 .filter-row {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 1rem; flex-wrap: wrap; margin-bottom: 0.6rem;
@@ -697,6 +710,7 @@ button:disabled {
   border-color: var(--ok); color: var(--ok);
   background: color-mix(in srgb, var(--ok) 12%, transparent);
 }
+.row-select { flex: none; cursor: pointer; }
 .caret { color: var(--muted); width: 0.9rem; display: inline-block; font-size: 0.75rem; }
 .preset-num { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.82rem; font-weight: 800; }
 .preset-name { font-weight: 700; font-size: 0.95rem; white-space: nowrap; flex: none; }
@@ -715,6 +729,18 @@ button:disabled {
   background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 1rem;
 }
 .patch-settings b { color: var(--text); }
+
+/* EXP-8: block cards pack 3-per-row on wide screens instead of stacking
+   full-width one per row (huge dead strip next to a 1-4-param block on a
+   wide monitor). `row dense` backfills gaps left by short/collapsed cards. */
+.block-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.7rem;
+  grid-auto-flow: row dense;
+}
+@media (min-width: 900px) { .block-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1400px) { .block-grid { grid-template-columns: repeat(3, 1fr); } }
 
 /* block cards with a colored left spine + colored header bar */
 .block-detail {
@@ -778,16 +804,18 @@ button:disabled {
 .block-detail.bypassed .block-detail-head .state-toggle { background: var(--track); }
 .block-detail-head .fs-toggle.full { opacity: 0.45; }
 
+/* EXP-8: params stack vertically inside each (now narrower) card instead of
+   scrolling horizontally in one long row. */
 .param-grid {
   display: flex;
-  flex-wrap: nowrap;        /* every block's params on one line */
-  gap: 0.6rem;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
   padding: 0.7rem 0.8rem;
-  overflow-x: auto;
 }
 .param {
-  width: 150px;
-  flex: none;              /* fixed columns, scroll if many (matches Designer) */
+  width: 100%;
+  flex: none;
   display: flex;
   gap: 0.35rem;
   font-size: 0.82rem;
@@ -1208,6 +1236,7 @@ input[type="range"]::-moz-range-thumb {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(265px, 1fr));
   gap: 0.7rem;
 }
+.asset-grid[hidden] { display: none; }
 .asset-card {
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--card-bg);
   box-shadow: var(--shadow); padding: 0.75rem 0.85rem; display: flex; flex-direction: column;
@@ -1257,8 +1286,22 @@ input[type="range"]::-moz-range-thumb {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   border-radius: 6px; padding: 0.1rem 0.4rem;
 }
-.dep-row .dep-name { font-weight: 700; }
+.dep-row .dep-name { font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dep-empty { color: var(--muted); font-size: 0.85rem; padding: 0.4rem 0; }
+
+/* CAP-2/CAP-3: per-row + bulk reset/replace controls in the usage modal */
+.dep-row .dep-reset,
+.dep-row .dep-replace {
+  font: inherit; font-size: 0.8rem; flex: none;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card-bg); color: var(--text); padding: 0.25rem 0.5rem; cursor: pointer;
+}
+.dep-row .dep-reset:hover { border-color: var(--danger, #d8434a); color: var(--danger, #d8434a); }
+.dep-bulk-actions {
+  display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem;
+  padding-bottom: 0.6rem; border-bottom: 1px dashed var(--border);
+}
+.dep-bulk-actions select { font: inherit; font-size: 0.8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text); padding: 0.25rem 0.5rem; }
 
 /* templates list */
 .tmpl-new {
@@ -1427,3 +1470,7 @@ input[type="range"]::-moz-range-thumb {
 .epoch-guide b { color: var(--text); }
 .epoch-note { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.8rem; }
 .file-row-eta { color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) {
+  .gp150-captures-columns { grid-template-columns: 1fr; }
+  .gp150-captures-columns-3 { grid-template-columns: 1fr; }
+}

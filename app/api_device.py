@@ -403,11 +403,16 @@ async def convert_inspect(
         data = await f.read()
         try:
             src = prst_format.detect(data)
+            tgt_key = _target_for(src.key, target)
+            problems = prst_convert.check_convertible(data, tgt_key)
         except ValueError as e:
+            # covers both an unrecognized .prst and prst_convert.ConversionError
+            # (e.g. a GP-150 upload — detect() recognizes it since GP150-3, but
+            # this converter is GP-5/GP-50-only; _require_supported() raises
+            # ConversionError, a ValueError subclass, rather than silently
+            # walking GP-150's unrelated container as if it were GP-5/GP-50)
             out.append({"name": f.filename, "ok": False, "error": str(e)})
             continue
-        tgt_key = _target_for(src.key, target)
-        problems = prst_convert.check_convertible(data, tgt_key)
         out.append(
             {
                 "name": f.filename,
