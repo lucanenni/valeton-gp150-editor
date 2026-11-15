@@ -106,7 +106,7 @@ in upstream's file is out of date. Findings behind each item are in
   0x444 that the pedal rewrites is kept in step; two bodies built that way were written to a scratch slot and
   read back byte-identical (`re/DEVICE_GP150.md`, "Checksum").
 - [x] **PLAT-1** — Hosting: GitHub Pages, live at https://lucanenni.github.io/valeton-gp150-editor/
-  (`.github/workflows/pages.yml` builds `dist/` and deploys on every push to `master`; the static
+  (`.github/workflows/pages.yml` builds `dist/` and deploys on every push to `main`; the static
   build was checked under a sub-path, workers included).
 - [x] **PLAT-3** — Release checklist, in order: (1) minimal diff against upstream,
   (2) documentation scrub, (3) squash history, (4) go public, publish `dist/`, tag a

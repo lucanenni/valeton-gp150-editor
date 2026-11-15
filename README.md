@@ -129,7 +129,7 @@ but the converter you actually want is the standalone one.
 
 You don't need any of this to use the editor — open the
 [hosted build](https://lucanenni.github.io/valeton-gp150-editor/) (GitHub Pages, deployed from
-`master` by `.github/workflows/pages.yml`). Local setup below is for development; it's also what you'd
+`main` by `.github/workflows/pages.yml`). Local setup below is for development; it's also what you'd
 run to build the static bundle yourself (`scripts/build_static_site.mjs`, see `DEPLOY.md`), which includes
 the GP-150 pages too. (`vercel.json` and `retired/` come from upstream, which retired its own Vercel
 deployment; this fork does not use Vercel.)
