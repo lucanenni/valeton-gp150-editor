@@ -117,4 +117,24 @@ await U.exclusive(async () => { order.push(requests.length); await new Promise((
 assert.equal(order[0], order[1], "no scan request while a user action runs");
 await p;
 assert.equal(requests.length, 200);
+// --- guard(): outside reads wait for the request in flight; the scan itself is not blocked by it
+U._reset(); store.clear(); requests = [];
+const seen = [];
+U.onBody((slot0) => seen.push(slot0), (slot0) => slot0 === 3);
+const W = globalThis.WebMidiGP150;
+W.readSlotViaSelect = async (i) => { requests.push("sel" + i); return patch(i, "x"); };
+U.guard(W, ["readSlotViaSelect", "readAllNames"]);
+const scan = U.load({ force: true });
+await new Promise((r) => setTimeout(r, 30));
+const before = requests.length;
+await W.readSlotViaSelect(9);
+const idx = requests.indexOf("sel9");
+assert.ok(idx > 0 && idx < requests.length, "ran between scan requests");
+await scan;
+assert.equal(seen.length, 200, "the body sink saw every slot");
+assert.deepEqual(seen.slice(0, 3), [0, 1, 2]);
+// reconnect with a cache: only names that changed or slots a sink still wants are re-read
+requests = []; seen.length = 0;
+await U.load();
+assert.deepEqual(requests.filter((r) => typeof r === "number"), [3], "the sink wanted slot 4 again");
 console.log("ok");

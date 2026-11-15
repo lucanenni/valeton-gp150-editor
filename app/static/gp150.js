@@ -1343,6 +1343,14 @@
   // Captures & IRs page (gp150_captures_ui.js, GP150-8), alongside the
   // existing GP-5/GP-50 sync flow.
 
+  // For other panels (the library): show a body in the inspector exactly like a loaded file.
+  window.GP150UI = {
+    async openBody(body, name = "library.prst") {
+      await inspect([new File([body], name, { type: "application/octet-stream" })], { liveWrite: true });
+      resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+  };
+
   wireDropZone();
   wireLiveRead();
   wireNameList();

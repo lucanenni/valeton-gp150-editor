@@ -37,6 +37,8 @@
 
   const entries = new Array(SLOTS).fill(null); // {name, st, nam, ir, nsOn, cabOn}, slots literal 1-based or null
   const listeners = new Set();
+  const bodyWanted = new Set();  // (slot0) -> true when a sink still lacks that slot's body (re-read it on connect)
+  const bodySinks = new Set();   // (slot0, body) for every full body read -- the preset library keeps them
   let status = { state: "idle", done: 0, total: 0, message: "" };
   let running = null, cancelled = false;
   let paused = 0, resume = null, inflight = null;
@@ -94,6 +96,7 @@
   const names = () => entries.map((e) => (e ? e.name : null));
 
   // ---- updates ------------------------------------------------------------------------------
+  function sink(slot0, body) { for (const cb of bodySinks) { try { cb(slot0, body); } catch (e) { console.error(e); } } }
   function setEntry(slot0, e) {
     const prev = JSON.stringify(entries[slot0]);
     entries[slot0] = e;
@@ -104,7 +107,7 @@
     try {
       if (!F.isGp150(body)) return;
       const slot0 = F.readPatchIndex(body);
-      if (slot0 >= 0 && slot0 < SLOTS) setEntry(slot0, decodeBody(body));
+      if (slot0 >= 0 && slot0 < SLOTS) { setEntry(slot0, decodeBody(body)); sink(slot0, body); }
     } catch { /* not a preset body */ }
   }
 
@@ -123,6 +126,18 @@
       if (paused === 0 && resume) { const r = resume; resume = null; r(); }
     }
   }
+  // Make the async pedal reads other code calls (the editor's own "Read slot", names list, catalog
+  // reads) yield to a running scan instead of interleaving with it. The scan itself keeps using the
+  // original functions (`raw`), so it never waits on itself. Idempotent.
+  const raw = {};
+  function guard(W, names) {
+    for (const n of names) {
+      if (!W || typeof W[n] !== "function" || raw[n]) continue;
+      raw[n] = W[n];
+      W[n] = (...a) => exclusive(() => raw[n].apply(W, a));
+    }
+  }
+  const pedal = (W, n) => (raw[n] || W[n]).bind(W);
   async function request(fn) {
     await gate();
     inflight = (async () => fn())();
@@ -138,12 +153,12 @@
       todo = Array.from({ length: SLOTS }, (_, i) => i);
     } else {
       setStatus({ state: "loading", done: 0, total: 0, message: "Checking preset names…" });
-      const list = await request(() => W.readAllNames());
+      const list = await request(() => pedal(W, "readAllNames")());
       const byIndex = new Map(list.map((x) => [x.index, (x.name || "").trim()]));
       todo = [];
       for (let i = 0; i < SLOTS; i++) {
         const e = entries[i];
-        if (!e || (byIndex.has(i) && byIndex.get(i) !== e.name)) todo.push(i);
+        if (!e || (byIndex.has(i) && byIndex.get(i) !== e.name) || [...bodyWanted].some((w) => w(i))) todo.push(i);
       }
       await sleep(settleMs);
     }
@@ -153,8 +168,9 @@
       if (cancelled) break;
       setStatus({ state: "loading", done, total, message: `Reading presets… ${done}/${total}` });
       try {
-        const body = await request(() => W.readPresetByIndex(i));
+        const body = await request(() => pedal(W, "readPresetByIndex")(i));
         setEntry(i, decodeBody(body));
+        sink(i, body);
         failures = 0;
       } catch (e) {
         if (++failures >= MAX_FAILURES) throw new Error(`stopped after ${failures} failed reads (preset ${i + 1}): ${e.message}`);
@@ -194,9 +210,11 @@
 
   const API = {
     SLOTS, decodeBody, get, count, names, known, isComplete,
-    applyBody, load, rescan, cancel, onConnected, exclusive,
+    applyBody, load, rescan, cancel, onConnected, exclusive, guard,
     getStatus: () => ({ ...status, known: known() }),
     on: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
+    // cb(slot0, body) for every full body read; `wanted(slot0)` (optional) makes the next connect re-read slots the sink lacks.
+    onBody: (cb, wanted) => { bodySinks.add(cb); if (wanted) bodyWanted.add(wanted); return () => { bodySinks.delete(cb); if (wanted) bodyWanted.delete(wanted); }; },
     configure(o) { if (o && o.settleMs >= 0) settleMs = o.settleMs; },
     _reset() { entries.fill(null); status = { state: "idle", done: 0, total: 0, message: "" }; },
   };
