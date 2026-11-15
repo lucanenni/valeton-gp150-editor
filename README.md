@@ -17,7 +17,8 @@ the pedal's MIDI SysEx protocol from scratch. It reads and writes the device liv
 **Live demo (this fork, GP-150 included, beta):**
 [lucanenni.github.io/valeton-gp150-editor](https://lucanenni.github.io/valeton-gp150-editor/) —
 zero-setup, runs entirely in-browser, Chrome or Edge, pedal on USB. The **upstream** project's own
-hosted build (GP-5/GP-50 only) is [valeton-gp50-woad.vercel.app](https://valeton-gp50-woad.vercel.app).
+hosted build (GP-5/GP-50 only) was retired on 2026-10-26: its maintainer no longer has the hardware,
+and the GP-5/GP-50 pages of this fork's build are the same code.
 This is a beta: GP-150 writes go out only after their exact bytes were reproduced from real captures,
 but read first and keep a backup of your presets before writing.
 
@@ -64,6 +65,10 @@ If you open an issue about talking to the pedal, please include:
 - If you can, a raw MIDI capture of the failure, e.g. with
   [MIDI Monitor](https://www.snoize.com/midimonitor/) on macOS. This is the single most
   useful thing you can attach.
+
+*(The section above is the original author's.)* **This fork:** it is tested against one GP-150 (firmware
+V1.1.1) and has no GP-5/GP-50 hardware, so the GP-5/GP-50 code paths are exactly upstream's and are not
+re-tested on a pedal here. GP-150 issues go to this repository's issue tracker.
 
 ## GP-150 support (this fork)
 
@@ -122,11 +127,12 @@ but the converter you actually want is the standalone one.
 
 ## Setup
 
-For GP-5/GP-50 use, you don't need any of this — open the upstream
-[live demo](https://valeton-gp50-woad.vercel.app). Local setup below is for
-development; it's also what you'd run to build this fork's own static bundle
-(`scripts/build_static_site.mjs` — no hosted build of this fork exists yet, see
-`DEPLOY.md`), which includes the GP-150 pages too.
+You don't need any of this to use the editor — open the
+[hosted build](https://lucanenni.github.io/valeton-gp150-editor/) (GitHub Pages, deployed from
+`master` by `.github/workflows/pages.yml`). Local setup below is for development; it's also what you'd
+run to build the static bundle yourself (`scripts/build_static_site.mjs`, see `DEPLOY.md`), which includes
+the GP-150 pages too. (`vercel.json` and `retired/` come from upstream, which retired its own Vercel
+deployment; this fork does not use Vercel.)
 
 ```bash
 # from this repo's root
