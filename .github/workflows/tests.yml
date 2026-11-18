@@ -19,6 +19,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # a few JS tests compare against a Python oracle (app/tests/*_oracle.py)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install fastapi "uvicorn[standard]" python-multipart pytest httpx
       - name: JS tests
         run: |
           set -e
