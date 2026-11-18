@@ -155,12 +155,15 @@
       <p class="subtitle">
         A copy of the pedal's presets, kept in this browser. It fills in the background after you connect
         (only what changed since last time is read again) and follows the pedal live, so you can search and
-        back up without the pedal at hand. “Restore” writes a backup (a zip from here, or loose <code>.prst</code> files)
+        back up without the pedal at hand. Star and tag presets, rename them, copy, swap or move them between slots,
+        and put them in setlists for the stage. “Restore” writes a backup (a zip from here, or loose <code>.prst</code> files)
         back to the pedal.
       </p>
       <div class="gp150-live-row">
         <input type="search" id="gp150-lib-search" class="lib-search" placeholder="Search name, slot or model — e.g. plexi, spring, snaptone 3" />
         <label class="gp150-lib-check"><input type="checkbox" id="gp150-lib-only-on" /> enabled modules only</label>
+        <label class="gp150-lib-check"><input type="checkbox" id="gp150-lib-starred" /> ★ starred only</label>
+        <select id="gp150-lib-tag" aria-label="Filter by tag"><option value="">no tags yet</option></select>
       </div>
       <div class="gp150-live-row">
         <button type="button" id="gp150-lib-backup-all">Back up all (.zip)</button>
@@ -174,6 +177,10 @@
       <div id="gp150-lib-restore" class="gp150-lib-restore" hidden>
         <p id="gp150-lib-restore-summary" class="subtitle"></p>
         <ul id="gp150-lib-restore-list" class="gp150-name-list"></ul>
+        <div id="gp150-lib-restore-meta" class="gp150-live-row" hidden>
+          <label class="gp150-lib-check"><input type="checkbox" id="gp150-lib-restore-meta-check" checked /> <span id="gp150-lib-restore-meta-text"></span></label>
+          <select id="gp150-lib-restore-meta-mode" aria-label="How to combine"><option value="merge">add to what I have</option><option value="replace">replace what I have</option></select>
+        </div>
         <div class="gp150-live-row">
           <button type="button" id="gp150-lib-restore-go" class="primary">Write to the pedal</button>
           <button type="button" id="gp150-lib-restore-cancel">Cancel</button>
@@ -182,6 +189,7 @@
       </div>
       <ul id="gp150-lib-list" class="gp150-name-list gp150-lib-list"></ul>
       <p id="gp150-lib-empty" class="subtitle" hidden></p>
+      <div id="gp150-lib-setlists" class="gp150-lib-setlists"></div>
     </section>
 
     <!-- EXP-9 (2026-09-23): block presets. Self-contained, separate from

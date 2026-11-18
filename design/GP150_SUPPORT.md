@@ -118,7 +118,13 @@ Uploads and full-preset writes put a **content prefix** in front of the struct:
   each chosen preset with `sendWritePreset` (1.5 s apart), then reads the names back and only keeps the
   slots that read back as expected. `GP150Usage.guard()` makes the editor's other async pedal reads wait
   for the scan's request in flight. Bulk restore is covered by a simulated pedal in
-  `test_gp150_library_js.mjs`; it has not been run against the real pedal.
+  `test_gp150_library_js.mjs`, and was run against the real pedal on scratch slots (read back byte for byte;
+  the pedal may recompute the Volume float at `0x378` when it stores a preset, so compare that field loosely).
+  The same write path carries the per-preset operations (`planSlotOp`: copy, swap, move; `planRename`): a move
+  leaves a copy of a preset that already reads as empty in the source slot. After a successful write `remap()`
+  moves the stars, tags and setlist entries with the presets. If the pedal doesn't answer the read-back, the
+  error says the presets were sent and points to "Re-read all presets".
+  Library renames (IR / SnapTone / NAM) are in the Captures & IRs cards, see `re/DEVICE_GP150.md` "Rename".
 
 ### 3.3 Edits (single messages)
 

@@ -94,7 +94,12 @@ what is known is written up in [`design/GP150_SUPPORT.md`](design/GP150_SUPPORT.
   by that same background read and kept current by the pedal's live updates. Search by name, slot or
   the model of any module ("plexi spring", "snaptone 3"), back up everything (or the filtered ones)
   as a zip of valid `.prst` files, and restore a zip or loose `.prst` files to the pedal: it shows what
-  differs, asks, writes the chosen presets and reads the names back to check.
+  differs, asks, writes the chosen presets and reads the names back to check. Each preset has a star,
+  tags and an actions menu: rename it, copy it to another slot, swap two slots or move one (all written
+  to the pedal after a confirmation and read back), or add it to a setlist. Setlists are ordered lists
+  with a stage mode that steps through them and selects each preset on the pedal. Stars, tags and setlists
+  live in the browser and travel inside the backup zip. User IRs, NAM models and the user SnapTones can be
+  renamed from their cards on the Captures & IRs page.
 - **MCP server** ([`mcp/`](mcp/README.md)): lets Claude Code (or any MCP client) search the effect
   catalog, read any preset from the pedal without touching the front panel, build or edit a patch by
   model and parameter names and write it to a scratch slot (default 190–199), list the pedal's libraries,

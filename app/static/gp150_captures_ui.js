@@ -130,7 +130,7 @@
   // was scoped (reuse the GP-50->GP-150 converter, repoint its N->S/NAM
   // reference, download-only) but explicitly deferred by the user ("per
   // ora lasciamo stare") -- not implemented.
-  function catalogCard(kind, entry) {
+  function catalogCard(kind, entry, onRename) {
     const card = document.createElement("div");
     card.className = `asset-card ${kind}`;
     const top = document.createElement("div");
@@ -176,6 +176,18 @@
       card.appendChild(foot);
     }
 
+    // Rename in place (IR / NAM / SnapTone rename commands, confirmed live 2026-11-18). The 50 factory
+    // SnapTones keep their names; everything else in these lists is a user slot.
+    if (!isPlaceholder && onRename && !(kind === "st" && entry.index <= 50)) {
+      const rn = document.createElement("button");
+      rn.type = "button";
+      rn.className = "ac-list ac-rename";
+      rn.textContent = "Rename";
+      rn.title = "Change this item's name on the pedal (16 ASCII characters)";
+      rn.addEventListener("click", () => onRename(entry));
+      (card.querySelector(".ac-foot") || card.appendChild(Object.assign(document.createElement("div"), { className: "ac-foot" }))).appendChild(rn);
+    }
+
     return card;
   }
 
@@ -200,8 +212,32 @@
       // 2026-09-26 ("SnapTone #0 None non esiste").
       for (const entry of entries) {
         if (entry.name === "None") continue;
-        listEl.appendChild(catalogCard(kind, entry));
+        listEl.appendChild(catalogCard(kind, entry, guarded(renameEntry)));
       }
+    }
+
+    async function renameEntry(entry) {
+      showError("");
+      const wire = entry.index;                       // the index the list reports is the one the rename command takes
+      const shown = kind === "ir" ? wire + 1 : wire;
+      const raw = await window.UI.promptDialog(`New name for ${itemLabel.replace(/s$/, "")} #${shown} (max 16 characters, ASCII):`, entry.name || "", "Rename");
+      if (raw == null) return;
+      const name = raw.trim();
+      if (!name) { showError("The name can't be empty."); return; }
+      if (!/^[\x20-\x7e]{1,16}$/.test(name)) { showError("Use at most 16 printable ASCII characters."); return; }
+      if (name === entry.name) return;
+      try {
+        if (!window.WebMidiGP150.isConnected()) await window.WebMidiGP150.connect();
+        window.WebMidiGP150.sendRename(kind, wire, name);
+        statusEl.textContent = `Renaming #${shown}…`;
+        await new Promise((r) => setTimeout(r, 1500));
+        const entries = await fetchFn();
+        const now = entries.find((e) => e.index === wire);
+        renderCards(entries);
+        statusEl.textContent = `${entries.length} ${itemLabel}`;
+        if (now && now.name === name) window.UI.toast(`Renamed to “${name}”.`, "ok");
+        else showError(`Sent, but the pedal reads “${now ? now.name : "?"}” — check it directly.`);
+      } catch (e) { showError(e.message); statusEl.textContent = ""; }
     }
 
     btn.addEventListener("click", guarded(async () => {

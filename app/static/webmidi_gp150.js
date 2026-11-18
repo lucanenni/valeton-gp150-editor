@@ -665,6 +665,36 @@
     return message;
   }
 
+  // --- rename a library item (User IR / SnapTone / NAM) in place -------------------------------------
+  // One set-record per kind: [cmd][len 24][u32 list index][16-byte ASCII name, NUL padded]; the cmd appears
+  // twice in the envelope like every other host set here (see buildEnableMessage). The list index is the
+  // one readUserIrs()/readSnaptones()/readNamModels() report for the item (User IR 0-based, the others 1-based).
+  const RENAME_CMD = { ir: 0x1041, st: 0x1051, nam: 0x1091 };
+  const RENAME_NAME_LEN = 16;
+  function buildRenameMessage(kind, index, name, { tag, counter } = {}) {
+    const cmd = RENAME_CMD[kind];
+    if (!cmd) throw new Error(`rename kind must be ir, st or nam, got ${JSON.stringify(kind)}`);
+    if (!Number.isInteger(index) || index < 0 || index > 0xffff) throw new Error(`index must be a small non-negative integer, got ${index}`);
+    if (!/^[\x20-\x7e]*$/.test(name)) throw new Error(`name must be printable ASCII: ${JSON.stringify(name)}`);
+    if (name.length > RENAME_NAME_LEN) throw new Error(`name too long (${name.length} bytes, max ${RENAME_NAME_LEN}): ${JSON.stringify(name)}`);
+    const payload = new Array(12 + 4 + RENAME_NAME_LEN).fill(0);
+    payload[0] = 0x01;
+    payload[2] = payload.length - 4;
+    payload[4] = 0x00;                       // host "set"
+    payload[5] = (cmd >>> 12) & 0x0f;
+    payload[6] = payload[8] = cmd & 0xff; payload[7] = payload[9] = cmd >>> 8;
+    payload[10] = 4 + RENAME_NAME_LEN + 4;   // record length, the outer one as Suite sends it
+    payload[12] = index & 0xff; payload[13] = index >>> 8;
+    Array.from(name, (c) => c.charCodeAt(0)).forEach((b, i) => { payload[16 + i] = b; });
+    return buildFromPayload(payload, tag, counter);
+  }
+  function sendRename(kind, index, name) {
+    assertReady();
+    const message = buildRenameMessage(kind, index, name);
+    output.send([0xf0, ...message, 0xf7]);
+    return message;
+  }
+
   function sendSave(slot, name) {
     assertReady();
     const message = buildSaveMessage(slot, name);
@@ -1987,6 +2017,7 @@
     sendEnable,
     sendModelSwap,
     sendSave,
+    sendRename,
     // GP150-13 write path
     buildWritePresetChunks,
     sendWritePreset,
@@ -2012,7 +2043,7 @@
       bankAndPc, findPort, crc8, computeChecksum, computeWireTag, buildFromPayload, buildReorderMessage,
       buildSetParamMessage, buildEnableMessage, buildModelSwapMessage, buildSaveMessage,
       fxidToMmT1T2, float32LEBytes, float64LEBytes, buildPatchDataChunks, PATCHDATA_MAGIC, PATCHDATA_CHUNK_MAX_BYTES,
-      buildSelectPresetMessage, buildIrUploadEnvelope, buildIrUploadChunks, toBase128Pair,
+      buildRenameMessage, buildSelectPresetMessage, buildIrUploadEnvelope, buildIrUploadChunks, toBase128Pair,
       buildLibraryStruct, buildCloneUploadStream, buildCloneUploadChunks, convertCloForDevice,
       buildNamUploadEnvelope, buildNamUploadChunks, crc32SkipRange,
     },

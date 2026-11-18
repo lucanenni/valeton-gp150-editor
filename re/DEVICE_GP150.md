@@ -319,6 +319,17 @@ corpus). The pedal rewrites it itself when it stores a patch, and since it lies 
 (`write_module_enabled()`) keep it in step with the enable flags. The other varying bytes of that tail
 (`0x448`, `0x44c`) belong to the patch-level settings (footswitch assignments), see GP150-10.
 
+## Rename (User IR / SnapTone / NAM)
+
+A host "set" record per kind, the same envelope as the other host sets: logical message
+`01 | crc8 | u16 len | P=00 | T=cmd>>12 | cmd | [cmd][u16 len=24][u32 list index][16-byte ASCII name, NUL padded]`,
+then the usual `F0 7F | chk | TOTAL | OFF | SEQ | IDX | nibbles | F7` frame. Commands: User IR `0x1041`,
+SnapTone `0x1051`, NAM `0x1091`. The list index is the one the matching list read reports (User IR 0-based,
+SnapTone and NAM 1-based, as for uploads). Confirmed live on 2026-11-18 on a scratch IR (index 19), NAM (20) and
+SnapTone (100): each name read back changed, nothing else did. The commands and the layout agree with the
+description in the Valeton Suite-compatible tool VLTN Tone Studio (read as documentation only; no code taken).
+`app/tests/test_gp150_rename_js.mjs` rebuilds the frame with an independent encoder and compares byte for byte.
+
 ## Open (do not re-derive from scratch, but not solved either)
 
 - **`0x441-0x444` region**: a real, distinct varying region (confirmed in

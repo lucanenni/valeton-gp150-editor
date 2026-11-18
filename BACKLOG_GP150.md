@@ -125,8 +125,16 @@ in upstream's file is out of date. Findings behind each item are in
     the NAM trainer removal).
 - [x] **LIB-1** — Library: local copy of the 200 presets (IndexedDB), search by name/slot/model,
   zip backup, restore with comparison, write and name read-back. Offline tests cover zip, search,
-  backup, restore planning and the write loop against a simulated pedal; a live restore on scratch
-  slots is still to be run.
+  backup, restore planning and the write loop against a simulated pedal. Checked on the real pedal
+  (2026-11-18): the library filled 200/200 after connecting, a restore to scratch slots read back
+  byte for byte.
+- [x] **LIB-2** — Stars, tags, setlists (with a stage mode that selects each preset on the pedal), and
+  per-preset rename / copy / swap / move, written like a restore. Checked live on scratch slots 198-200:
+  copy, swap, rename and move each read back as expected; stars, tags and setlist entries follow moves
+  and swaps. Stars/tags/setlists are stored in IndexedDB and carried in the backup zip as `gp150-library.json`.
+- [x] **REN-1** — Rename of User IRs (`0x1041`), SnapTones (`0x1051`) and NAM models (`0x1091`), in place, from the
+  Captures & IRs cards (the 50 factory SnapTones keep their names). Confirmed live on scratch items;
+  `test_gp150_rename_js.mjs` checks the frame against an independent encoder.
 - [x] **SNAP-2** — SnapTone from a `.nam` now renders the largest submodel of a slimmable container
   (Suite's choice); the pedal upload keeps the lite one.
 - [x] **SNAP-1** — Superseded by GP150-9's profiler and built-in reference; closed.

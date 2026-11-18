@@ -160,6 +160,11 @@ assert.throws(() => L.buildBackup({ slots: [100] }), /nothing to back up/);
   assert.deepEqual(L.search("p7").map((x) => x.slot), [8], "library updated from the verified write");
   assert.deepEqual(progress.filter((p) => p === "write").length, 3); assert.equal(progress.at(-1), "verify");
 
+  // the check read fails twice, then works: still verified; fails three times: an error that says the presets were sent
+  const slow = await L.writeBackup(items, { pedal: mkPedal({ failNames: 2 }), usage: null, sleep: noSleep });
+  assert.deepEqual(slow.written, [3, 7, 9]);
+  await assert.rejects(L.writeBackup(items, { pedal: mkPedal({ failNames: 3 }), usage: null, sleep: noSleep }), /were sent, but the pedal didn't answer/);
+
   // a slot that does not read back is reported, and left out of the library
   sent.length = 0; stored.clear();
   const bad = await L.writeBackup(items, { pedal: mkPedal({ drop: new Set([7]) }), usage: null, sleep: noSleep });
@@ -168,6 +173,86 @@ assert.throws(() => L.buildBackup({ slots: [100] }), /nothing to back up/);
 
   // a failing send stops the run
   await assert.rejects(L.writeBackup(items, { pedal: { sendWritePreset(b, slot) { if (slot === 7) throw new Error("not connected"); sent.push(slot); }, readAllNames: async () => [] }, sleep: noSleep }), /not connected/);
+}
+
+// ---- stars, tags, setlists, persistence
+{
+  const st = L.memoryStore();
+  L._reset(); await L.init({ store: st, ring });
+  L.put(0, patch(0, "Clean Sparkle", { AMP })); L.put(11, patch(11, "Lead Plexi", { AMP, RVB })); L.put(12, patch(12, "Ambient", { RVB }));
+  L.setStar(11, true); L.setTags(11, ["Rock", " rock ", "lead solo"]); L.setTags(0, ["clean"]);
+  assert.deepEqual(L.getMeta(11), { star: true, tags: ["Rock", "rock", "lead solo"] }, "tags keep their case; exact duplicates only");
+  assert.deepEqual(L.search("", { starred: true }).map((x) => x.slot), [12]);
+  assert.deepEqual(L.search("", { tag: "ROCK" }).map((x) => x.slot), [12], "tag filter ignores case");
+  assert.deepEqual(L.search("solo").map((x) => x.slot), [12], "tags are searched like names");
+  assert.deepEqual(L.allTags().map((t) => t.tag), ["clean", "lead solo", "rock", "Rock"].sort((a, b) => a.localeCompare(b)));
+  assert.equal(L.summary(11).star, true);
+  const id = L.createSetlist("Friday gig"); L.setlistAdd(id, 11); L.setlistAdd(id, 0); L.setlistAdd(id, 12);
+  L.setlistMove(id, 2, 0); assert.deepEqual(L.listSetlists()[0].slots, [12, 11, 0]);
+  L.setlistRemove(id, 1); assert.deepEqual(L.listSetlists()[0].slots, [12, 0]);
+  L.renameSetlist(id, "Saturday"); assert.equal(L.listSetlists()[0].name, "Saturday");
+  assert.throws(() => L.setlistAdd(id, 500), /range/);
+  await new Promise((r) => setTimeout(r, 10));
+  L._reset(); await L.init({ store: st, ring });
+  assert.equal(L.getMeta(0).tags[0], "clean"); assert.equal(L.listSetlists()[0].name, "Saturday"); assert.deepEqual(L.listSetlists()[0].slots, [12, 0]);
+
+  // backup carries the meta file; readBackup hands it back; merge keeps what is there
+  const zip2 = L.buildBackup();
+  const names2 = (await Z.parse(zip2)).map((e) => e.name);
+  assert.ok(names2.includes("gp150-library.json"));
+  L._reset(); await L.init({ store: L.memoryStore(), ring });
+  L.put(0, patch(0, "Clean Sparkle", { AMP })); L.setTags(0, ["mine"]);
+  const rb = await L.readBackup([{ name: "b.zip", data: zip2 }]);
+  assert.equal(rb.skipped.length, 0); assert.equal(rb.meta.tagged, 2); assert.equal(rb.meta.setlists, 1);
+  assert.deepEqual(L.getMeta(0).tags, ["mine"], "reading a backup changes nothing by itself");
+  L.applyMeta(rb.meta.data, { mode: "merge" });
+  assert.deepEqual(L.getMeta(0).tags.sort(), ["clean", "mine"]);
+  L.applyMeta(rb.meta.data, { mode: "replace" });
+  assert.deepEqual(L.getMeta(0).tags, ["clean"]);
+}
+
+// ---- slot operations: plans, then a simulated pedal
+{
+  L._reset(); await L.init({ store: L.memoryStore(), ring });
+  const blank = patch(150, "It's GP-150", {}); for (const m of ["NS", "AMP", "NR", "CAB", "EQ", "MOD", "DLY", "RVB"]) F.writeModuleEnabled(blank, m, false); F.writeModuleEnabled(blank, "VOL", true); F.fixChecksum(blank); // VOL stays on, as on the pedal
+  L.put(150, blank);
+  L.put(3, patch(3, "Three", { AMP })); L.put(7, patch(7, "Seven", { RVB }));
+  L.setStar(3, true); L.setTags(7, ["b"]);
+  const id = L.createSetlist("S"); L.setlistAdd(id, 3); L.setlistAdd(id, 7);
+
+  const cp = L.planSlotOp("copy", 3, 7);
+  assert.deepEqual(cp.items.map((i) => [i.slot, i.name, F.readPatchIndex(i.body), F.checksumOk(i.body)]), [[7, "Three", 7, true]]);
+  assert.deepEqual(cp.overwritten.map((o) => o.name), ["Seven"]);
+  const sw = L.planSlotOp("swap", 3, 7);
+  assert.deepEqual(sw.items.map((i) => [i.slot, i.name]), [[7, "Three"], [3, "Seven"]]);
+  assert.deepEqual(sw.mapping, { 3: 7, 7: 3 });
+  const mv = L.planSlotOp("move", 3, 7);
+  assert.deepEqual(mv.items.map((i) => [i.slot, i.name]), [[7, "Three"], [3, "It's GP-150"]], "the source is left empty");
+  assert.equal(F.readPatchIndex(mv.items[1].body), 3);
+  assert.throws(() => L.planSlotOp("copy", 3, 3), /different/);
+  assert.throws(() => L.planSlotOp("copy", 99, 3), /isn't in the library/);
+  assert.throws(() => L.planSlotOp("swap", 3, 120), /isn't in the library/);
+  assert.throws(() => L.planSlotOp("shuffle", 3, 7), /unknown/);
+  const rn = L.planRename(3, " Tres ");
+  assert.equal(rn.items[0].name, "Tres"); assert.equal(F.readName(rn.items[0].body), "Tres"); assert.ok(F.checksumOk(rn.items[0].body));
+  assert.throws(() => L.planRename(3, "far too long for the pedal"), /13/);
+  assert.throws(() => L.planRename(3, "café"), /ASCII/);
+  assert.throws(() => L.planRename(3, "  "), /empty/);
+
+  // run a swap through writeBackup on a fake pedal, then remap: the pedal, the library and the meta agree
+  const stored = new Map([[3, L.get(3)], [7, L.get(7)]]);
+  const pedal = { sendWritePreset(b, slot) { stored.set(slot, new Uint8Array(b)); }, async readAllNames() { return Array.from({ length: 200 }, (_, i) => ({ index: i, name: stored.has(i) ? F.readName(stored.get(i)) : "It's GP-150" })); } };
+  const noSleep = () => Promise.resolve();
+  const r = await L.writeBackup(sw.items, { pedal, sleep: noSleep });
+  assert.deepEqual(r.failed, []); L.remap(sw.mapping);
+  assert.equal(L.summary(7).name, "Three"); assert.equal(L.summary(3).name, "Seven");
+  assert.equal(L.getMeta(7).star, true, "the star followed the preset"); assert.deepEqual(L.getMeta(3).tags, ["b"]);
+  assert.deepEqual(L.listSetlists()[0].slots, [7, 3], "setlist entries followed the presets");
+  // move: tags travel, the destination's own are dropped, the source is empty
+  L.remap(L.planSlotOp("move", 7, 3).mapping);
+  assert.equal(L.getMeta(3).star, true); assert.deepEqual(L.getMeta(7).tags, []);
+  assert.deepEqual(L.listSetlists()[0].slots, [3, 3]);
+  L.copyMeta(3, 9); assert.equal(L.getMeta(9).star, true);
 }
 
 await L.clear();
