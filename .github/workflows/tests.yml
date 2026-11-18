@@ -1,0 +1,47 @@
+# Offline test suites: JS (node), Python (pytest, fast suite) and the MCP server. None of them touch hardware.
+# Upstream's GP-50 tests that need the author's presetExports/ are skipped, not failing.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: JS tests
+        run: |
+          set -e
+          for t in app/tests/test_*.mjs; do echo "== $t"; node "$t"; done
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install fastapi "uvicorn[standard]" python-multipart pytest httpx
+      - run: python -m pytest app/tests -q -m "not slow"
+
+  mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: mcp
+      - run: npm test
+        working-directory: mcp
