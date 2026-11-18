@@ -1,0 +1,13 @@
+{
+  "name": "gp150-ui-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DOM-level tests of the library view (jsdom); no hardware, no browser",
+  "type": "module",
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  },
+  "scripts": {
+    "test": "node test_library_ui.mjs"
+  }
+}

@@ -56,7 +56,7 @@ function fresh() {
 }
 
 // --- decoding
-let U = fresh(); U.configure({ settleMs: 0 });
+let U = fresh(); U.configure({ settleMs: 0, retryMs: 0 });
 assert.deepEqual(
   (({ st, nam, ir }) => ({ st, nam, ir }))(U.decodeBody(patch(0, "A", { ns: fx(15, 0, 0, 2), cab: fx(10, 16, 0, 4) }))),
   { st: 3, nam: null, ir: 5 });
@@ -81,7 +81,7 @@ assert.equal(U.getStatus().state, "ready");
 // --- cache restored by a new session: only changed names are read
 await new Promise((r) => setTimeout(r, 700)); // debounced save
 assert.ok(store.get("gp150.usage.v1"), "cache written");
-U = fresh(); U.configure({ settleMs: 0 });
+U = fresh(); U.configure({ settleMs: 0, retryMs: 0 });
 assert.equal(U.isComplete(), true, "cache restored");
 requests = [];
 bodies.set(20, patch(20, "Delta", { ns: fx(15, 0, 0, 3) })); // renamed on the pedal
@@ -105,8 +105,27 @@ U._reset(); store.clear(); requests = []; failSlots = new Set([5, 6]);
 await U.load();
 assert.equal(U.getStatus().state, "error");
 assert.match(U.getStatus().message, /stopped after 2 failed reads/);
-assert.equal(requests.length, 7, "slots 1-5 ok, 6th and 7th fail, nothing after");
+assert.equal(requests.length, 9, "slots 1-5 ok, the 6th and 7th fail twice each (one retry), nothing after");
 failSlots = new Set();
+
+// --- a read that fails once is retried; the names list gets three tries
+U._reset(); store.clear(); requests = []; failSlots = new Set(); let flaky = 0;
+{
+  const W0 = globalThis.WebMidiGP150, rp = W0.readPresetByIndex, rn = W0.readAllNames;
+  W0.readPresetByIndex = async (i) => { requests.push(i); if (i === 3 && flaky++ === 0) throw new Error("timeout"); return bodies.get(i) || patch(i, "It's GP-150"); };
+  await U.load({ force: true });
+  assert.equal(U.getStatus().state, "ready", "one failed read is retried and the scan goes on");
+  assert.equal(U.known(), 200);
+  let nameFails = 2;
+  W0.readAllNames = async () => { if (nameFails-- > 0) throw new Error("timeout"); return rn(); };
+  requests = [];
+  await U.load();
+  assert.equal(U.getStatus().state, "ready", "names list answers on the third try");
+  nameFails = 3;
+  await U.load();
+  assert.equal(U.getStatus().state, "error", "three failures in a row still stop the load");
+  W0.readPresetByIndex = rp; W0.readAllNames = rn;
+}
 
 // --- exclusive() runs between two requests
 U._reset(); store.clear(); requests = [];

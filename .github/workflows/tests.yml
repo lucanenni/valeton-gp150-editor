@@ -1,4 +1,4 @@
-# Offline test suites: JS (node), Python (pytest, fast suite) and the MCP server. None of them touch hardware.
+# Offline test suites: JS (node), the library view in jsdom, Python (pytest, fast suite) and the MCP server. None of them touch hardware.
 # Upstream's GP-50 tests that need the author's presetExports/ are skipped, not failing.
 name: Tests
 
@@ -50,3 +50,15 @@ jobs:
         working-directory: mcp
       - run: npm test
         working-directory: mcp
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: app/tests/ui
+      - run: npm test
+        working-directory: app/tests/ui

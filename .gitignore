@@ -53,6 +53,7 @@ graphify-out/
 gp150_scan_cache/
 
 mcp/node_modules/
+app/tests/ui/node_modules/
 
 # Third-party content kept out of the repo (real Suite upload captures); see app/tests/gp150_corpus.py
 re/gp150_captures/**/raw_midi_out_capture.txt

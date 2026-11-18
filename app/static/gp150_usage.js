@@ -30,6 +30,7 @@
   const KEY = "gp150.usage.v1";
   let settleMs = 150;          // pause after each (acknowledged) reply; the pedal answers in ~40 ms
   const MAX_FAILURES = 2;      // consecutive read failures before the scan gives up
+  let retryMs = 2000;          // a read that fails is tried again after this (then twice this); the pedal is sometimes slow to answer
   const NO_NAME = "";
 
   const F = typeof module !== "undefined" && module.exports ? require("./gp150_format.js") : root.GP150Format;
@@ -153,7 +154,13 @@
       todo = Array.from({ length: SLOTS }, (_, i) => i);
     } else {
       setStatus({ state: "loading", done: 0, total: 0, message: "Checking preset names…" });
-      const list = await request(() => pedal(W, "readAllNames")());
+      let list, lastErr;
+      for (let attempt = 0; attempt < 3 && !list; attempt++) {
+        if (attempt) { setStatus({ state: "loading", done: 0, total: 0, message: "The pedal is slow to answer — trying again…" }); await sleep(retryMs * attempt); }
+        if (cancelled) break;
+        try { list = await request(() => pedal(W, "readAllNames")()); } catch (e) { lastErr = e; }
+      }
+      if (!list) throw lastErr || new Error("cancelled");
       const byIndex = new Map(list.map((x) => [x.index, (x.name || "").trim()]));
       todo = [];
       for (let i = 0; i < SLOTS; i++) {
@@ -168,7 +175,9 @@
       if (cancelled) break;
       setStatus({ state: "loading", done, total, message: `Reading presets… ${done}/${total}` });
       try {
-        const body = await request(() => pedal(W, "readPresetByIndex")(i));
+        let body;
+        try { body = await request(() => pedal(W, "readPresetByIndex")(i)); }
+        catch { await sleep(retryMs); body = await request(() => pedal(W, "readPresetByIndex")(i)); }   // one more try before it counts as a failure
         setEntry(i, decodeBody(body));
         sink(i, body);
         failures = 0;
@@ -215,7 +224,7 @@
     on: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
     // cb(slot0, body) for every full body read; `wanted(slot0)` (optional) makes the next connect re-read slots the sink lacks.
     onBody: (cb, wanted) => { bodySinks.add(cb); if (wanted) bodyWanted.add(wanted); return () => { bodySinks.delete(cb); if (wanted) bodyWanted.delete(wanted); }; },
-    configure(o) { if (o && o.settleMs >= 0) settleMs = o.settleMs; },
+    configure(o) { if (o && o.settleMs >= 0) settleMs = o.settleMs; if (o && o.retryMs >= 0) retryMs = o.retryMs; },
     _reset() { entries.fill(null); status = { state: "idle", done: 0, total: 0, message: "" }; },
   };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
