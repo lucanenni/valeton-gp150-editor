@@ -100,6 +100,13 @@ what is known is written up in [`design/GP150_SUPPORT.md`](design/GP150_SUPPORT.
   with a stage mode that steps through them and selects each preset on the pedal. Stars, tags and setlists
   live in the browser and travel inside the backup zip. User IRs, NAM models and the user SnapTones can be
   renamed from their cards on the Captures & IRs page.
+- **Command palette** (Ctrl+K or ⌘K on the Preset Explorer page): find a preset by name, slot, any model in its
+  chain or tag, or an action (back up, re-read, read the pedal's settings, stage mode of a setlist). Enter opens a
+  preset in the inspector, Shift+Enter selects it on the pedal.
+- **Generate** (Preset Explorer page): **Randomize** builds a new preset from catalog models with every value in
+  range (levels stay near their defaults, so it is never much louder than a normal preset); **Morph** blends two
+  presets from the library. Each shows its chain and is only written, to a slot you choose, after a confirmation
+  that names what it overwrites, followed by a read-back.
 - **Settings** (Preset Explorer page): the pedal's global menu — input level, output, record levels, footswitch
   and jack modes, MIDI channels and clock, display brightness and timeout, Global EQ on/off. "Read settings" shows
   what the pedal holds; edits are written back one group at a time and read again to check. Experimental: the

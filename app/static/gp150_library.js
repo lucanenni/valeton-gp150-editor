@@ -227,6 +227,20 @@
     }
     throw new Error(`unknown operation ${op}`);
   }
+  // A new preset (from the generator) for `slot`: the same plan shape as the operations above.
+  function planPut(slot, body, verb) {
+    if (!(slot >= 0 && slot < SLOTS)) throw new Error("slot must be 1-200");
+    if (!body || body.length !== F.PRST_LEN) throw new Error("not a GP-150 preset");
+    const cur = bodies[slot];
+    return { items: [item(slot, withSlot(body, slot))], mapping: {}, overwritten: [{ slot, name: cur ? F.readName(cur.body).trim() : "?" }] };
+  }
+  // First slot, counting from the end, that reads as empty (the factory "It's GP-150" with nothing enabled), or null.
+  function lastEmptySlot() {
+    for (let i = SLOTS - 1; i >= 0; i--) if (bodies[i] && isEmptyBody(bodies[i].body)) return i;
+    return null;
+  }
+  // Name and chain of a body that is not in the library (a generated preset), as summary() describes the stored ones.
+  const describeBody = (body) => summarize(F.readPatchIndex(body), body);
   // New name for one preset (13 characters at most, the pedal's limit).
   function planRename(slot, newName) {
     const cur = bodies[slot]; if (!cur) throw new Error(`slot ${slot + 1} isn't in the library yet`);
@@ -389,7 +403,7 @@
     SLOTS, init, whenReady, setRing, put, get, count, clear, summary, search, buildBackup, readBackup, writeBackup,
     fileName, memoryStore,
     getMeta, setStar, setTags, allTags, listSetlists, createSetlist, renameSetlist, deleteSetlist, setlistAdd, setlistRemove, setlistMove,
-    remap, copyMeta, applyMeta, planSlotOp, planRename, emptyTemplate,
+    remap, copyMeta, applyMeta, planSlotOp, planRename, planPut, lastEmptySlot, describeBody, emptyTemplate,
     on: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
     _reset() { bodies.fill(null); summaries.fill(null); ring = null; store = null; ready = null; meta = emptyMeta(); },
   };

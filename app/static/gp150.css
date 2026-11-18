@@ -274,3 +274,23 @@ button.gp150-module-state:disabled { opacity: 0.6; cursor: default; }
 .gp150-setting.dirty { outline: 1px solid var(--accent); }
 .gp150-setting label { color: var(--muted); font-size: 0.85rem; }
 .gp150-setting select, .gp150-setting input { max-width: 9rem; }
+
+/* generate */
+.gp150-gen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; margin-top: 0.5rem; }
+.gp150-gen-box { border: 1px solid var(--border); border-radius: 10px; padding: 0.75rem; display: grid; gap: 0.5rem; align-content: start; }
+.gp150-gen-box h3 { margin: 0; font-size: 0.95rem; }
+.gp150-gen-mods { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+.gp150-gen-preview { min-height: 3rem; }
+.gp150-gen-preview .gp150-lib-name { display: block; font-size: 1.1rem; margin-bottom: 0.25rem; }
+.gp150-gen-box input[type=number] { width: 4.5rem; }
+
+/* command palette */
+.gp150-palette { width: min(40rem, 94vw); max-height: 80vh; display: grid; gap: 0.5rem; text-align: left; }
+.gp150-palette input { width: 100%; box-sizing: border-box; }
+.gp150-palette-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; max-height: 55vh; }
+.gp150-palette-item { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.4rem 0.6rem; border-radius: 8px; cursor: pointer; }
+.gp150-palette-item[aria-selected="true"] { background: var(--accent-soft, rgba(127, 127, 127, 0.18)); outline: 1px solid var(--accent); }
+.gp150-palette-kind { flex: none; width: 4.2rem; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; }
+.gp150-palette-label { font-weight: 600; flex: none; }
+.gp150-palette-sub { color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gp150-palette-hint { color: var(--muted); font-size: 0.75rem; }

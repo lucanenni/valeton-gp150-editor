@@ -153,7 +153,7 @@
         <h2>GP-150 Library</h2>
       </div>
       <p class="subtitle">
-        A copy of the pedal's presets, kept in this browser. It fills in the background after you connect
+        A copy of the pedal's presets, kept in this browser (press Ctrl+K, or ⌘K, to search everything from anywhere). It fills in the background after you connect
         (only what changed since last time is read again) and follows the pedal live, so you can search and
         back up without the pedal at hand. Star and tag presets, rename them, copy, swap or move them between slots,
         and put them in setlists for the stage. “Restore” writes a backup (a zip from here, or loose <code>.prst</code> files)
@@ -190,6 +190,23 @@
       <ul id="gp150-lib-list" class="gp150-name-list gp150-lib-list"></ul>
       <p id="gp150-lib-empty" class="subtitle" hidden></p>
       <div id="gp150-lib-setlists" class="gp150-lib-setlists"></div>
+    </section>
+
+    <!-- Generate: Randomize and Morph make a new preset (gp150_generate.js / gp150_generate_ui.js); writing goes through the library's confirmed write. -->
+    <section class="card" id="gp150-generate">
+      <div class="dc-section-head">
+        <h2>GP-150 Generate</h2>
+      </div>
+      <p class="subtitle">
+        Make a new preset: <strong>Randomize</strong> picks models and settings (catalog models only, every value in range,
+        levels kept near their defaults), <strong>Morph</strong> blends two presets from the library. Nothing is sent to the pedal
+        until you press “Write to slot”, which asks first and names what it overwrites.
+      </p>
+      <div id="gp150-gen-error" class="error-banner" role="alert" hidden></div>
+      <div class="gp150-gen-grid">
+        <div id="gp150-gen-random" class="gp150-gen-box"></div>
+        <div id="gp150-gen-morph" class="gp150-gen-box"></div>
+      </div>
     </section>
 
     <!-- Pedal settings (global menu): read, edit, write back, check. gp150_settings.js / gp150_settings_ui.js -->
@@ -332,12 +349,15 @@
   <script src="/static/gp150_settings.js"></script>
   <script src="/static/webmidi_gp150.js"></script>
   <script src="/static/gp150_zip.js"></script>
+  <script src="/static/gp150_generate.js"></script>
   <script src="/static/gp150_library.js"></script>
   <script src="/static/gp150_usage.js"></script>
   <script src="/static/gp150.js"></script>
   <script src="/static/gp150_library_ui.js"></script>
+  <script src="/static/gp150_generate_ui.js"></script>
   <script src="/static/gp150_settings_ui.js"></script>
   <script src="/static/gp150_block_library.js"></script>
+  <script src="/static/gp150_palette.js"></script>
   <script src="/static/explorer.js"></script>
 </body>
 </html>

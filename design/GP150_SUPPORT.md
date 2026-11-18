@@ -126,6 +126,14 @@ Uploads and full-preset writes put a **content prefix** in front of the struct:
   error says the presets were sent and points to "Re-read all presets".
   Library renames (IR / SnapTone / NAM) are in the Captures & IRs cards, see `re/DEVICE_GP150.md` "Rename".
 
+### 3.2c Generate and the command palette
+
+`gp150_generate.js` is pure (bodies and the catalog in, a body out). Randomize only uses catalog models (never SnapTone / NAM / User IR
+references, which depend on what the pedal holds), writes every parameter inside its catalog range (levels such as Volume, Level, Mix stay
+within 15 % of the default), and clears the parameter slots the new model does not use. Morph blends the numeric parameters of modules that
+hold the same model in both presets and takes everything else from the nearer one. Neither sends anything: the result is written with
+`GP150LibraryUI.writePlan` like any other library write. The palette (`gp150_palette.js`) only calls what the page already exposes.
+
 ### 3.2b Settings (global menu)
 
 Query `0x2000` returns the firmware string (8 bytes) and then the records `0x2010` (Global EQ, 128 bytes) … `0x2050`

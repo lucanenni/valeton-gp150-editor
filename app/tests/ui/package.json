@@ -8,6 +8,6 @@
     "jsdom": "^26.1.0"
   },
   "scripts": {
-    "test": "node test_library_ui.mjs && node test_settings_ui.mjs"
+    "test": "node test_library_ui.mjs && node test_settings_ui.mjs && node test_generate_ui.mjs && node test_palette_ui.mjs"
   }
 }

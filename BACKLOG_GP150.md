@@ -137,6 +137,12 @@ in upstream's file is out of date. Findings behind each item are in
   `test_gp150_rename_js.mjs` checks the frame against an independent encoder.
 - [x] **SNAP-2** — SnapTone from a `.nam` now renders the largest submodel of a slimmable container
   (Suite's choice); the pedal upload keeps the lite one.
+- [x] **GEN-1** — Randomize and Morph (`gp150_generate.js`, Generate section): catalog models only, values in range, levels near
+  their defaults; morph blends the parameters of modules that hold the same model and takes the rest from the nearer preset.
+  Written through the library's confirmed write. Checked live on 2026-11-18: a random preset (slot 200) and a morph of two
+  library presets (slot 199) read back from the pedal identical to what was sent; both slots were reset afterwards.
+  Offline: `test_gp150_generate_js.mjs` (300 seeds: valid, in range, repeatable; morph ends are the presets) and `app/tests/ui/test_generate_ui.mjs`.
+- [x] **PAL-1** — Command palette (Ctrl+K / ⌘K, `gp150_palette.js`): presets by name/slot/model/tag, actions, stage mode. `app/tests/ui/test_palette_ui.mjs`.
 - [x] **SET-1** — Pedal settings (global menu) and Global EQ on/off: `readGlobals()` (query `0x2000`), `sendSetRecord()` (whole
   record back, up to two packets), `gp150_settings.js` (offsets, labels, ranges) and a Settings section. Checked live on 2026-11-18:
   a one-packet record (`0x2050`, a tap-tempo flag) and the two-packet Global EQ record (`0x2010`, on/off) were each written, read

@@ -307,6 +307,17 @@
     } finally { busy = false; renderStatus(); }
   }
 
+  window.GP150LibraryUI = {
+    writePlan, isBusy: () => busy,
+    // open stage mode on a setlist (used by the command palette)
+    startStage(id) {
+      const l = L.listSetlists().find((x) => x.id === id);
+      if (!l || !l.slots.length) return false;
+      currentList = id; stage = { index: 0 }; selectOnPedal(l.slots[0]); renderSetlists();
+      return true;
+    },
+  };
+
   async function askSlot(text) {
     const raw = await window.UI.promptDialog(text, "", "Next");
     if (raw == null) return null;
