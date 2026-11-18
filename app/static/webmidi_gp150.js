@@ -295,7 +295,7 @@
           continue;
         }
         seenLens.add(stream.length);
-        if (expectedLen == null || stream.length === expectedLen) best = stream;
+        if (expectedLen == null || (typeof expectedLen === "function" ? expectedLen(stream) : stream.length === expectedLen)) best = stream;
       }
     }
     if (best) return { stream: best, seenLens };
@@ -407,10 +407,12 @@
   // checksum, then the correct wire tag (auto-computed unless `tag`
   // overrides it) -- port of _build_from_payload()/
   // _recompute_payload_checksum().
-  function buildFromPayload(payload, tag, counter) {
+  // `checksumStart`: the message CRC covers P onwards (index 4); the default 5 gives the same value for every
+  // host message whose P is 0, which is all the older builders send.
+  function buildFromPayload(payload, tag, counter, checksumStart = CHECKSUM_START) {
     const header = [0x7f, 0, payload.length, 0, 0, 0, (counter ?? 1) & 0xff, 0];
     const raw = header.concat(bytesToNibbles(payload));
-    const checksum = computeChecksum(payload);
+    const checksum = crc8(payload.slice(checksumStart));
     raw[8 + 2 * 1] = (checksum >> 4) & 0xf;
     raw[8 + 2 * 1 + 1] = checksum & 0xf;
     raw[1] = (tag != null ? tag : computeWireTag(raw)) & 0xff;
@@ -663,6 +665,68 @@
     const message = buildModelSwapMessage(module, targetFxid);
     output.send([0xf0, ...message, 0xf7]);
     return message;
+  }
+
+  // --- global settings records (0x2000 .. 0x2070) -----------------------------------------------------------
+  // A query is the host message P=03: 01 | crc8 | u16 len | 03 | T | cmd | [cmd][02 00][args]; the reply is the
+  // record itself, 01 | crc8 | u16 len | P | T | cmd | [cmd][len][data...]. readRecord() sends the same 'info' + query
+  // pair as the catalog reads and keeps the reply whose command matches.
+  const GLOBAL_CMD = { globals: 0x2000, globalEq: 0x2010, io: 0x2020, usb: 0x2030, midi: 0x2040, system: 0x2050, drum: 0x2060, tuner: 0x2070 };
+  let queryCounter = 0x20;
+  function buildQueryMessage(cmd, { args = [], tag, counter } = {}) {
+    if (!Number.isInteger(cmd) || cmd < 0 || cmd > 0xffff) throw new Error(`cmd must be a 16-bit integer, got ${cmd}`);
+    const payload = new Array(12 + args.length).fill(0);
+    payload[0] = 0x01;
+    payload[2] = payload.length - 4;
+    payload[4] = 0x03;                       // host query
+    payload[5] = (cmd >>> 12) & 0x0f;
+    payload[6] = payload[8] = cmd & 0xff; payload[7] = payload[9] = cmd >>> 8;
+    payload[10] = 0x02;
+    args.forEach((b, i) => { payload[12 + i] = b; });
+    return buildFromPayload(payload, tag, counter, 4);
+  }
+  // -> {cmd, data}: `data` is what follows the record's own [cmd][len] header.
+  async function readRecord(name, opts) {
+    const cmd = typeof name === "number" ? name : GLOBAL_CMD[name];
+    if (!cmd) throw new Error(`unknown record ${name}`);
+    assertReady();
+    queryCounter = queryCounter >= 0x7e ? 0x20 : queryCounter + 1;
+    const request = buildQueryMessage(cmd, { counter: queryCounter });
+    const stream = await readCatalog(request, (st) => st.length >= 12 && st[0] === 0x01 && (st[6] | (st[7] << 8)) === cmd, { ...(opts || {}), raw: true });
+    return { cmd, stream: Array.from(stream), data: Array.from(stream.slice(12)) };
+  }
+
+  // Writing a whole settings record back: host "set", 01 | crc8 | u16 len | 00 | T | cmd | [cmd][len][data], cut into
+  // 119-byte packets (TOTAL, OFFSET and a message number in each header). Only the five settings records are ever
+  // sent; the factory reset (0x2080) and everything else is refused here.
+  const SETTABLE_RECORDS = new Set([0x2010, 0x2020, 0x2030, 0x2040, 0x2050]);
+  const PACKET_DATA = 119;
+  let setCounter = 0x40;
+  function buildSetRecordPackets(cmd, data, { seq } = {}) {
+    if (!SETTABLE_RECORDS.has(cmd)) throw new Error(`record 0x${Number(cmd).toString(16)} is not one that may be written`);
+    const d = Array.from(data);
+    if (!d.length || d.length > 0x200) throw new Error(`record data of ${d.length} bytes`);
+    const rest = [0x00, (cmd >>> 12) & 0x0f, cmd & 0xff, cmd >>> 8, cmd & 0xff, cmd >>> 8, d.length & 0xff, d.length >>> 8, ...d];
+    const msg = [0x01, crc8(rest), rest.length & 0xff, rest.length >>> 8, ...rest];
+    if (seq == null) { setCounter = setCounter >= 0x7e ? 0x40 : setCounter + 1; seq = setCounter; }
+    const out = [];
+    for (let off = 0, idx = 0; off < msg.length; off += PACKET_DATA, idx++) {
+      const raw = [0x7f, 0, msg.length & 0x7f, msg.length >>> 7, off & 0x7f, off >>> 7, seq & 0x7f, idx, ...bytesToNibbles(msg.slice(off, off + PACKET_DATA))];
+      raw[1] = computeWireTag(raw);
+      out.push(raw);
+    }
+    return out;
+  }
+  function sendSetRecord(cmd, data) {
+    assertReady();
+    const packets = buildSetRecordPackets(cmd, data);
+    for (const raw of packets) output.send([0xf0, ...raw, 0xf7]);
+    return packets;
+  }
+  // The pedal's settings: {firmware, records: Map(cmd -> Uint8Array)} (see gp150_settings.js)
+  async function readGlobals(opts) {
+    const r = await readRecord("globals", opts);
+    return root.GP150Settings.parseGlobalsReply(r.stream);
   }
 
   // --- rename a library item (User IR / SnapTone / NAM) in place -------------------------------------
@@ -1895,7 +1959,7 @@
             // Like Suite, acknowledge every completed reply: unacknowledged, the pedal keeps re-sending it
             // for ~3 s, and a read started meanwhile (e.g. right after an upload) gets that stale copy.
             ackCompleted(byCategory, acked);
-            finish(() => resolve(decodeIndexedRecords(settled)));
+            finish(() => resolve(opts && opts.raw ? settled : decodeIndexedRecords(settled)));
           }, MATCH_SETTLE_MS);
         }
         return stream != null;
@@ -1949,9 +2013,9 @@
           return finish(() => {
             if (!byCategory.size) return reject(new Error("no reply — is the pedal connected, and is Suite closed?"));
             const { stream, seenLens } = findMatchingStream(byCategory, expectedLen);
-            if (stream) return resolve(decodeIndexedRecords(stream));
+            if (stream) return resolve(opts && opts.raw ? stream : decodeIndexedRecords(stream));
             const seenList = [...seenLens].join(", ") || "none";
-            reject(new Error(`timed out waiting for a ${expectedLen}-byte reply — only saw length(s) ${seenList}`));
+            reject(new Error(typeof expectedLen === "function" ? `timed out waiting for the reply — only saw length(s) ${seenList}` : `timed out waiting for a ${expectedLen}-byte reply — only saw length(s) ${seenList}`));
           });
         }
         setTimeout(timeoutTick, 25);
@@ -2018,6 +2082,10 @@
     sendModelSwap,
     sendSave,
     sendRename,
+    readRecord,
+    readGlobals,
+    sendSetRecord,
+    GLOBAL_CMD,
     // GP150-13 write path
     buildWritePresetChunks,
     sendWritePreset,
@@ -2043,7 +2111,7 @@
       bankAndPc, findPort, crc8, computeChecksum, computeWireTag, buildFromPayload, buildReorderMessage,
       buildSetParamMessage, buildEnableMessage, buildModelSwapMessage, buildSaveMessage,
       fxidToMmT1T2, float32LEBytes, float64LEBytes, buildPatchDataChunks, PATCHDATA_MAGIC, PATCHDATA_CHUNK_MAX_BYTES,
-      buildRenameMessage, buildSelectPresetMessage, buildIrUploadEnvelope, buildIrUploadChunks, toBase128Pair,
+      buildRenameMessage, buildQueryMessage, buildSetRecordPackets, buildSelectPresetMessage, buildIrUploadEnvelope, buildIrUploadChunks, toBase128Pair,
       buildLibraryStruct, buildCloneUploadStream, buildCloneUploadChunks, convertCloForDevice,
       buildNamUploadEnvelope, buildNamUploadChunks, crc32SkipRange,
     },

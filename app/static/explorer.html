@@ -192,6 +192,27 @@
       <div id="gp150-lib-setlists" class="gp150-lib-setlists"></div>
     </section>
 
+    <!-- Pedal settings (global menu): read, edit, write back, check. gp150_settings.js / gp150_settings_ui.js -->
+    <section class="card" id="gp150-settings">
+      <div class="dc-section-head">
+        <h2>GP-150 Settings</h2>
+      </div>
+      <p class="subtitle">
+        The pedal's global menu: audio, recording, controls, MIDI, display, and the Global EQ switch. “Read settings” shows
+        what the pedal holds; change what you want, then “Write changes” sends each affected group back and reads it again to
+        check. Experimental: the layout follows public notes on the GP-180/GP-150 menu and a real GP-150 reply; the factory
+        reset is never sent.
+      </p>
+      <div class="gp150-live-row">
+        <button type="button" id="gp150-settings-read">Read settings</button>
+        <button type="button" id="gp150-settings-write" class="primary" disabled>Write changes</button>
+        <button type="button" id="gp150-settings-revert" disabled>Discard changes</button>
+        <span id="gp150-settings-status" class="subtitle"></span>
+      </div>
+      <div id="gp150-settings-error" class="error-banner" role="alert" hidden></div>
+      <div id="gp150-settings-groups" class="gp150-settings-groups"></div>
+    </section>
+
     <!-- EXP-9 (2026-09-23): block presets. Self-contained, separate from
          gp150.js -- see gp150_block_library.js's own file for the full
          rationale -- only listens for a "gp150:patch-rendered" event, never
@@ -308,12 +329,14 @@
   <script src="/static/device_bridge.js"></script>
   <script src="/static/static_api.js"></script>
   <script src="/static/gp150_format.js"></script>
+  <script src="/static/gp150_settings.js"></script>
   <script src="/static/webmidi_gp150.js"></script>
   <script src="/static/gp150_zip.js"></script>
   <script src="/static/gp150_library.js"></script>
   <script src="/static/gp150_usage.js"></script>
   <script src="/static/gp150.js"></script>
   <script src="/static/gp150_library_ui.js"></script>
+  <script src="/static/gp150_settings_ui.js"></script>
   <script src="/static/gp150_block_library.js"></script>
   <script src="/static/explorer.js"></script>
 </body>

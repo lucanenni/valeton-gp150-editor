@@ -137,6 +137,11 @@ in upstream's file is out of date. Findings behind each item are in
   `test_gp150_rename_js.mjs` checks the frame against an independent encoder.
 - [x] **SNAP-2** — SnapTone from a `.nam` now renders the largest submodel of a slimmable container
   (Suite's choice); the pedal upload keeps the lite one.
+- [x] **SET-1** — Pedal settings (global menu) and Global EQ on/off: `readGlobals()` (query `0x2000`), `sendSetRecord()` (whole
+  record back, up to two packets), `gp150_settings.js` (offsets, labels, ranges) and a Settings section. Checked live on 2026-11-18:
+  a one-packet record (`0x2050`, a tap-tempo flag) and the two-packet Global EQ record (`0x2010`, on/off) were each written, read
+  back and reverted; only the edited byte changed. Global EQ band values and the drum/tuner records are not editable.
+  Offline: `test_gp150_settings_js.mjs` (real reply fixture, independent packet encoder), `app/tests/ui/test_settings_ui.mjs`.
 - [x] **SNAP-1** — Superseded by GP150-9's profiler and built-in reference; closed.
 
 ## Blocked on hardware this fork's author does not own (GP-50)

@@ -330,6 +330,17 @@ SnapTone (100): each name read back changed, nothing else did. The commands and 
 description in the Valeton Suite-compatible tool VLTN Tone Studio (read as documentation only; no code taken).
 `app/tests/test_gp150_rename_js.mjs` rebuilds the frame with an independent encoder and compares byte for byte.
 
+## Settings records
+
+Query: P `03`, T `2`, cmd `0x2000`, payload `[00 20][02 00]` — the same shape as the catalog queries (it reproduces the real
+preset-names request, cmd `0x1010`, byte for byte). The message CRC covers everything from P on. Reply (408 bytes on firmware
+V1.1.1, fixture `app/tests/fixtures/gp150_globals_reply.json`): `01|crc|len|P|T|0x2000|[0x2000][len]`, then `"V1.1.1"` padded to
+8 bytes, then records `[cmd u16][len u16][data]`: `0x2010` (128, the Global EQ: u32 on/off, f32 level, 30 f32 band values),
+`0x2020` (16, audio), `0x2030` (16, recording), `0x2040` (22, MIDI), `0x2050` (24, system), `0x2060` (8), `0x2070` (120, a tuner
+record whose bytes are not stable between reads). Setting offsets are in `gp150_settings.js`. Writing: host set of one record
+(`[cmd][len][data]`), packets of 119 bytes with TOTAL/OFFSET/SEQ/IDX in the header. Confirmed live on 2026-11-18: `0x2050` byte 14
+(tap tempo sets DLY) and `0x2010` byte 0 (Global EQ on/off, two packets) written and read back, nothing else changed.
+
 ## Open (do not re-derive from scratch, but not solved either)
 
 - **`0x441-0x444` region**: a real, distinct varying region (confirmed in

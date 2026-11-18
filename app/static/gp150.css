@@ -265,3 +265,12 @@ button.gp150-module-state:disabled { opacity: 0.6; cursor: default; }
 .gp150-lib-stage-name { font-size: clamp(1.8rem, 6vw, 3.2rem); font-weight: 700; margin: 0.4rem 0; overflow-wrap: anywhere; }
 .gp150-lib-stage .gp150-live-row { justify-content: center; margin-top: 0.75rem; }
 .gp150-lib-stage button { min-width: 7rem; min-height: 2.6rem; }
+
+/* settings */
+.gp150-settings-groups { display: grid; gap: 1rem; margin-top: 0.75rem; }
+.gp150-settings-group h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+.gp150-settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.4rem 1rem; }
+.gp150-setting { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.15rem 0.4rem; border-radius: 6px; }
+.gp150-setting.dirty { outline: 1px solid var(--accent); }
+.gp150-setting label { color: var(--muted); font-size: 0.85rem; }
+.gp150-setting select, .gp150-setting input { max-width: 9rem; }

@@ -100,6 +100,11 @@ what is known is written up in [`design/GP150_SUPPORT.md`](design/GP150_SUPPORT.
   with a stage mode that steps through them and selects each preset on the pedal. Stars, tags and setlists
   live in the browser and travel inside the backup zip. User IRs, NAM models and the user SnapTones can be
   renamed from their cards on the Captures & IRs page.
+- **Settings** (Preset Explorer page): the pedal's global menu — input level, output, record levels, footswitch
+  and jack modes, MIDI channels and clock, display brightness and timeout, Global EQ on/off. "Read settings" shows
+  what the pedal holds; edits are written back one group at a time and read again to check. Experimental: the
+  layout follows public notes on the menu and a real GP-150 reply, and it was checked on one pedal. The factory
+  reset is never sent.
 - **MCP server** ([`mcp/`](mcp/README.md)): lets Claude Code (or any MCP client) search the effect
   catalog, read any preset from the pedal without touching the front panel, build or edit a patch by
   model and parameter names and write it to a scratch slot (default 190–199), list the pedal's libraries,

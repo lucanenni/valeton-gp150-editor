@@ -126,6 +126,14 @@ Uploads and full-preset writes put a **content prefix** in front of the struct:
   error says the presets were sent and points to "Re-read all presets".
   Library renames (IR / SnapTone / NAM) are in the Captures & IRs cards, see `re/DEVICE_GP150.md` "Rename".
 
+### 3.2b Settings (global menu)
+
+Query `0x2000` returns the firmware string (8 bytes) and then the records `0x2010` (Global EQ, 128 bytes) … `0x2050`
+(system), `0x2060`, `0x2070`, as `[cmd][len][data]`. The editor writes a record back whole (`sendSetRecord`, host set
+`01|crc8|len|00|T|cmd|[cmd][len][data]`, 119 bytes per packet), after re-reading it so nothing is overwritten with a stale
+copy, then reads again and compares. Only `0x2010`–`0x2050` can be written; the factory-reset command is refused in
+code. Offsets, labels and ranges: `gp150_settings.js`. See `re/DEVICE_GP150.md` "Settings records".
+
 ### 3.3 Edits (single messages)
 
 | command | raw bytes | payload |
