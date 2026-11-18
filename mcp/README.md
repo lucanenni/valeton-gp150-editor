@@ -21,7 +21,7 @@ python-rtmidi on CoreMIDI, from `.venv-midi`).
 | `upload_ir` | **writes** | a PCM `.wav` → User IR slot 1–20 (first 2048 samples, ~46 ms), re-reads the list to confirm |
 | `upload_nam` | **writes** | an "A2 Lite" `.nam` (1871-weight lite WaveNet) → NAM slot 1–20, confirmed by re-reading |
 | `upload_snaptone` | **writes** | a ready `.clo` → SnapTone slot 51–100, confirmed by re-reading |
-| `create_snaptone_from_nam` | **writes** | runs a 48 kHz `.nam` on the built-in 70 s test signal, profiles it and uploads the SnapTone (~20–40 s; worker threads) |
+| `create_snaptone_from_nam` | **writes** | runs a 48 kHz `.nam` (its largest submodel, as Suite does) on the built-in 70 s test signal, profiles it and uploads the SnapTone (~20–40 s; worker threads) |
 | `export_reference_signal` | no | writes the 70 s test signal as `reference.wav` (play it through an amp and record it) |
 | `create_snaptone_from_recording` | **writes** | profiles a recording of that signal played through your amp and uploads the SnapTone |
 | `write_patch` | **writes** | overwrite one preset slot with a built patch, without selecting it; only slots in the allowed list (default 190–199, `GP150_WRITABLE_SLOTS`), then re-reads the names to confirm |

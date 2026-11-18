@@ -136,6 +136,40 @@ assert.throws(() => L.buildBackup({ slots: [100] }), /nothing to back up/);
   assert.deepEqual((await L.readBackup([{ name: "bad.zip", data: new Uint8Array([0x50, 0x4b, 1, 2, 3]) }])).skipped.length, 1);
 }
 
+// ---- writeBackup: a fake pedal that stores what it is sent
+{
+  L._reset(); await L.init({ store: L.memoryStore(), ring });
+  const applied = [];
+  const usage = { exclusive: async (fn) => fn(), applyBody: (b) => applied.push(F.readPatchIndex(b)) };
+  const stored = new Map(), sent = [];
+  const mkPedal = ({ drop = new Set(), failNames = 0 } = {}) => ({
+    sendWritePreset(body, slot) { sent.push(slot); if (!drop.has(slot)) stored.set(slot, new Uint8Array(body)); },
+    async readAllNames() {
+      if (failNames-- > 0) throw new Error("timeout");
+      return Array.from({ length: 200 }, (_, i) => ({ index: i, name: stored.has(i) ? F.readName(stored.get(i)) : "It's GP-150" }));
+    },
+  });
+  const items = [3, 7, 9].map((slot) => { const b = patch(slot, `P${slot}`, { AMP }); b[0x10] ^= 0x55; return { slot, name: `P${slot}`, body: b }; }); // stale checksum on purpose
+  const noSleep = () => Promise.resolve();
+  const progress = [];
+  const ok = await L.writeBackup(items, { pedal: mkPedal({ failNames: 1 }), usage, sleep: noSleep, onProgress: (p) => progress.push(p.phase) });
+  assert.deepEqual(sent, [3, 7, 9], "written in order");
+  assert.ok([...stored.values()].every((b) => F.checksumOk(b)), "the checksum is rewritten before sending");
+  assert.deepEqual(ok.written, [3, 7, 9]); assert.deepEqual(ok.failed, []);
+  assert.deepEqual(applied, [3, 7, 9], "used-by list kept in step");
+  assert.deepEqual(L.search("p7").map((x) => x.slot), [8], "library updated from the verified write");
+  assert.deepEqual(progress.filter((p) => p === "write").length, 3); assert.equal(progress.at(-1), "verify");
+
+  // a slot that does not read back is reported, and left out of the library
+  sent.length = 0; stored.clear();
+  const bad = await L.writeBackup(items, { pedal: mkPedal({ drop: new Set([7]) }), usage: null, sleep: noSleep });
+  assert.deepEqual(bad.written, [3, 9]);
+  assert.deepEqual(bad.failed.map((f) => [f.slot, f.expected, f.got]), [[7, "P7", "It's GP-150"]]);
+
+  // a failing send stops the run
+  await assert.rejects(L.writeBackup(items, { pedal: { sendWritePreset(b, slot) { if (slot === 7) throw new Error("not connected"); sent.push(slot); }, readAllNames: async () => [] }, sleep: noSleep }), /not connected/);
+}
+
 await L.clear();
 assert.equal(L.count(), 0);
 console.log("ok");

@@ -189,11 +189,6 @@
     updateGo();
   }
 
-  async function readBackNames() {
-    const names = await W.readAllNames();
-    return new Map(names.map((n) => [n.index, (n.name || "").trim()]));
-  }
-
   panelGo.addEventListener("click", async () => {
     const items = selectedItems();
     if (!items.length || !W) return;
@@ -206,33 +201,15 @@
       "Write to pedal");
     if (!ok) return;
     panelGo.disabled = true; panelCancel.disabled = true;
-    const failed = [];
     try {
       if (!W.isConnected()) await W.connect();
-      const run = async () => {
-        for (let n = 0; n < items.length; n++) {
-          const it = items[n];
-          panelStatus.textContent = `Writing ${n + 1}/${items.length} — slot ${it.slot + 1}…`;
-          const body = F.fixChecksum(new Uint8Array(it.body)); body[F.PATCH_INDEX_OFF] = it.slot;
-          W.sendWritePreset(body, it.slot);
-          await sleep(WRITE_GAP_MS);
-        }
-        panelStatus.textContent = "Verifying…";
-        await sleep(VERIFY_SETTLE_MS);
-        let names;
-        try { names = await readBackNames(); } catch { await sleep(VERIFY_RETRY_MS); names = await readBackNames(); }
-        for (const it of items) {
-          const got = names.get(it.slot);
-          if (got === (it.name || "").trim()) {
-            const body = F.fixChecksum(new Uint8Array(it.body)); body[F.PATCH_INDEX_OFF] = it.slot;
-            L.put(it.slot, body);
-            if (U) U.applyBody(body);
-          } else failed.push(`${it.slot + 1} (reads “${got ?? "?"}”, expected “${it.name}”)`);
-        }
-      };
-      if (U) await U.exclusive(run); else await run();
+      const { failed } = await L.writeBackup(items, {
+        pedal: W, usage: U, gapMs: WRITE_GAP_MS, settleMs: VERIFY_SETTLE_MS, retryMs: VERIFY_RETRY_MS,
+        onProgress: (p) => { panelStatus.textContent = p.phase === "write" ? `Writing ${p.done + 1}/${p.total} — slot ${p.slot + 1}…` : "Verifying…"; },
+      });
       if (failed.length) {
-        showError(`Wrote ${items.length}, but ${failed.length} slot${failed.length === 1 ? "" : "s"} did not read back as expected: ${failed.join("; ")}. Check the pedal directly before trusting ${failed.length === 1 ? "it" : "them"}.`);
+        const list = failed.map((f) => `${f.slot + 1} (reads “${f.got ?? "?"}”, expected “${f.expected}”)`).join("; ");
+        showError(`Wrote ${items.length}, but ${failed.length} slot${failed.length === 1 ? "" : "s"} did not read back as expected: ${list}. Check the pedal directly before trusting ${failed.length === 1 ? "it" : "them"}.`);
         panelStatus.textContent = "";
       } else {
         closePanel();

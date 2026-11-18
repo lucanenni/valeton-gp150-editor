@@ -186,8 +186,39 @@
     return { items, skipped };
   }
 
+  // Writes the chosen readBackup() items to the pedal one after the other, then reads the names back and
+  // keeps the library (and the "used by" list) in step for every slot that reads back correctly.
+  // -> {written: [slot0], failed: [{slot, expected, got}]}. Throws if a send fails; slots written before
+  // that stay written (the caller says so). `pedal` is WebMidiGP150, `usage` GP150Usage (optional).
+  async function writeBackup(items, { pedal, usage = null, gapMs = 1500, settleMs = 1500, retryMs = 3000, onProgress = () => {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+    const prepared = items.map((it) => {
+      const body = F.fixChecksum(new Uint8Array(it.body)); body[F.PATCH_INDEX_OFF] = it.slot;
+      return { slot: it.slot, name: (it.name || "").trim(), body };
+    });
+    const run = async () => {
+      for (let n = 0; n < prepared.length; n++) {
+        onProgress({ phase: "write", done: n, total: prepared.length, slot: prepared[n].slot });
+        pedal.sendWritePreset(prepared[n].body, prepared[n].slot);
+        await sleep(gapMs);
+      }
+      onProgress({ phase: "verify", done: prepared.length, total: prepared.length });
+      await sleep(settleMs);
+      const read = async () => new Map((await pedal.readAllNames()).map((n) => [n.index, (n.name || "").trim()]));
+      let names;
+      try { names = await read(); } catch { await sleep(retryMs); names = await read(); }
+      const written = [], failed = [];
+      for (const p of prepared) {
+        const got = names.get(p.slot);
+        if (got === p.name) { put(p.slot, p.body); if (usage) usage.applyBody(p.body); written.push(p.slot); }
+        else failed.push({ slot: p.slot, expected: p.name, got: got ?? null });
+      }
+      return { written, failed };
+    };
+    return usage ? usage.exclusive(run) : run();
+  }
+
   const API = {
-    SLOTS, init, whenReady, setRing, put, get, count, clear, summary, search, buildBackup, readBackup,
+    SLOTS, init, whenReady, setRing, put, get, count, clear, summary, search, buildBackup, readBackup, writeBackup,
     fileName, memoryStore,
     on: (cb) => { listeners.add(cb); return () => listeners.delete(cb); },
     _reset() { bodies.fill(null); summaries.fill(null); ring = null; store = null; ready = null; },

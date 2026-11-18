@@ -416,6 +416,22 @@
     return headInput[0].map((v) => v * headScale);
   }
 
+  // Which submodel of a SlimmableContainer to use. `opts.prefer`: "first" (default; the smallest tier, which
+  // is what the pedal itself runs) or "largest" (the biggest tier that parses -- what Valeton Suite renders
+  // when it profiles a model into a SnapTone; the last submodel, so ties go to the later one).
+  function pickSubmodel(submodels, tryModel, opts) {
+    const largest = opts && opts.prefer === "largest";
+    let best = null;
+    for (const s of submodels) {
+      if (!s || !s.model) continue;
+      const found = tryModel(s.model);
+      if (!found) continue;
+      if (!largest) return found;
+      if (!best || found.weights.length >= best.weights.length) best = found;
+    }
+    return best;
+  }
+
   // Extracts a single-layer-array WaveNet model (weights + config + loudness)
   // from a parsed .nam JSON, handling the SlimmableContainer wrapper the same
   // way webmidi_gp150.js's own pickNamLiteModel() does for the pedal-upload
@@ -425,7 +441,7 @@
   // matching one is used, matching this pedal's own "lite tier only" real
   // behavior (see webmidi_gp150.js's own comment on why "lite" is all this
   // project ever sees from the real device).
-  function extractSingleArrayModel(namJson) {
+  function extractSingleArrayModel(namJson, opts) {
     function tryModel(model) {
       if (model.architecture !== "WaveNet") return null;
       const layers = model.config && model.config.layers;
@@ -446,12 +462,8 @@
     }
     const submodels = namJson.config && namJson.config.submodels;
     if (Array.isArray(submodels)) {
-      for (const s of submodels) {
-        if (s && s.model) {
-          const found = tryModel(s.model);
-          if (found) return found;
-        }
-      }
+      const found = pickSubmodel(submodels, tryModel, opts);
+      if (found) return found;
     }
     throw new Error(
       "nam_wavenet.js: no single-layer-array (modern-schema) WaveNet model found in this file "
@@ -463,7 +475,7 @@
   // each with head_size/head_bias instead of a head dict -- see this
   // module's docstring). Same SlimmableContainer handling as
   // extractSingleArrayModel().
-  function extractClassicModel(namJson) {
+  function extractClassicModel(namJson, opts) {
     function tryModel(model) {
       if (model.architecture !== "WaveNet") return null;
       const layers = model.config && model.config.layers;
@@ -485,12 +497,8 @@
     }
     const submodels = namJson.config && namJson.config.submodels;
     if (Array.isArray(submodels)) {
-      for (const s of submodels) {
-        if (s && s.model) {
-          const found = tryModel(s.model);
-          if (found) return found;
-        }
-      }
+      const found = pickSubmodel(submodels, tryModel, opts);
+      if (found) return found;
     }
     throw new Error(
       "nam_wavenet.js: no classic-schema WaveNet model found in this file "
@@ -501,13 +509,15 @@
   // Tries the modern (single-array, head-dict) schema first, then the
   // classic (multi-array, head_size) schema, before giving up -- covers
   // every real .nam file this project has on hand between the two.
-  function extractAnyModel(namJson) {
+  // Used to RENDER a model (SnapTone creation), so it takes the largest submodel by default;
+  // pass {prefer: "first"} for the smallest.
+  function extractAnyModel(namJson, opts = { prefer: "largest" }) {
     try {
-      const m = extractSingleArrayModel(namJson);
+      const m = extractSingleArrayModel(namJson, opts);
       return { kind: "modern", ...m };
     } catch (eModern) {
       try {
-        const m = extractClassicModel(namJson);
+        const m = extractClassicModel(namJson, opts);
         return { kind: "classic", ...m };
       } catch (eClassic) {
         throw new Error(

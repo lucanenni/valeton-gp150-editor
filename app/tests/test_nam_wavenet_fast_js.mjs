@@ -26,7 +26,18 @@ function check(name, cond, detail) {
 const maxErr = (a, b) => { let m = 0; for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; };
 
 // 1. real PyTorch outputs, rendered in small blocks so the history handling is exercised
-const a2 = NamWaveNet.extractAnyModel(load("refs/A2.nam"));
+// the PyTorch fixtures were made from A2.nam's lite submodel (the first one)
+const a2 = NamWaveNet.extractAnyModel(load("refs/A2.nam"), { prefer: "first" });
+{
+  const full = NamWaveNet.extractAnyModel(load("refs/A2.nam"));
+  check("A2.nam: the default pick is the largest submodel (what Suite profiles)", a2.weights.length === 1871 && full.weights.length === 12146,
+    `${a2.weights.length} / ${full.weights.length}`);
+  // the full tier has no PyTorch fixture: it must at least consume every weight and track the lite one
+  const x = Float32Array.from({ length: 6000 }, (_, i) => 0.4 * Math.sin(i * 0.05) + 0.2 * Math.sin(i * 0.31));
+  const yl = NamWaveNetFast.renderSync(a2, x, 1500), yf = NamWaveNetFast.renderSync(full, x, 1500);
+  let num = 0, den = 0; for (let i = 3000; i < x.length; i++) { num += (yl[i] - yf[i]) ** 2; den += yf[i] ** 2; }
+  check("A2.nam: full submodel renders and follows the lite one", yf.every(Number.isFinite) && num / den < 0.2, `nmse ${(num / den).toExponential(2)}`);
+}
 for (const n of ["nam_wavenet_reference_1.json", "nam_wavenet_reference_2.json"]) {
   const ref = fixture(n), x = Float32Array.from(ref.input);
   const y = NamWaveNetFast.renderSync(a2, x, 700);

@@ -123,6 +123,12 @@ in upstream's file is out of date. Findings behind each item are in
     converter guard, page markup and hooks in `device.html`/`explorer.html`) and this
     fork's own GP-50 features (bulk select, block presets, reset/replace SnapTone,
     the NAM trainer removal).
+- [x] **LIB-1** — Library: local copy of the 200 presets (IndexedDB), search by name/slot/model,
+  zip backup, restore with comparison, write and name read-back. Offline tests cover zip, search,
+  backup, restore planning and the write loop against a simulated pedal; a live restore on scratch
+  slots is still to be run.
+- [x] **SNAP-2** — SnapTone from a `.nam` now renders the largest submodel of a slimmable container
+  (Suite's choice); the pedal upload keeps the lite one.
 - [x] **SNAP-1** — Superseded by GP150-9's profiler and built-in reference; closed.
 
 ## Blocked on hardware this fork's author does not own (GP-50)

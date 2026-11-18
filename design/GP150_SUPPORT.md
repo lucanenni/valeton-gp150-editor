@@ -110,6 +110,15 @@ Uploads and full-preset writes put a **content prefix** in front of the struct:
   request); the pedal's live broadcast and the editor's own writes update single entries;
   "Rescan presets" re-reads everything. A panel edit that changes neither name nor the
   active preset while the editor is closed is only picked up by a rescan.
+- **Library** (`gp150_library.js`, `gp150_library_ui.js`, `gp150_zip.js`): the same background read
+  also hands every full body to a store in IndexedDB (`GP150Usage.onBody`; slots the store lacks are
+  re-read on the next connect). Search runs over name, slot and the model name of each module
+  (SnapTone / NAM / User IR references as "SnapTone 3" etc.; the always-present Volume block is left out).
+  Backups are stored zips of `NNN - Name.prst` with the checksum rewritten; restore (`writeBackup`) sends
+  each chosen preset with `sendWritePreset` (1.5 s apart), then reads the names back and only keeps the
+  slots that read back as expected. `GP150Usage.guard()` makes the editor's other async pedal reads wait
+  for the scan's request in flight. Bulk restore is covered by a simulated pedal in
+  `test_gp150_library_js.mjs`; it has not been run against the real pedal.
 
 ### 3.3 Edits (single messages)
 
@@ -151,7 +160,10 @@ NAM header details: the header carries a CRC-32 (poly `0xedb88320`, init/final
 own 4 bytes (offset 24–27) — skipped, not zeroed; the selected submodel's own
 `metadata.loudness` (float64) sits at offset 44. Only this one architecture is
 supported; a pedal slot rejects anything else. Files that contain several
-submodels (slimmable containers) use their "lite" one.
+submodels (slimmable containers) upload their "lite" one. Creating a SnapTone from such a file renders
+its largest submodel instead (A2.nam: 12146 weights, `channels=8`), which is what Suite profiles; the
+engine handles it with the same code (all weights consumed, output tracks the lite tier at 0.97
+correlation) but only the lite tier has a PyTorch reference fixture.
 
 ## 4. SnapTone (`.clo`, "Tone Catch") files
 
@@ -207,8 +219,9 @@ models are handled.
 chirps, plucked-string material), because Valeton's own file cannot be
 redistributed. Profiles built with it match Suite's within the profiler's own
 run-to-run spread (about ±1 dB in level and ~2 dB rms ripple, mostly above
-8 kHz). For NAM models the "recording" is the model output × 0.31 quantized to
-16 bit, as Suite's converter does.
+8 kHz). For NAM models the "recording" is the output of the model's largest submodel × 0.31
+quantized to 16 bit, as Suite's converter does. (Before 2026-11-18 the smallest one was used, which
+may account for part of the level difference to Suite.)
 
 ## 6. Hardware-safety rules carried over
 
